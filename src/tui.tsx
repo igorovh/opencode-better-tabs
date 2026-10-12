@@ -1,4 +1,5 @@
 /** @jsxImportSource @opentui/solid */
+import { existsSync } from "node:fs"
 import path from "node:path"
 import { Plugin, usePlugin } from "@opencode/plugin/tui"
 import type { Context } from "@opencode/plugin/tui/context"
@@ -26,6 +27,8 @@ const TITLE_DIM = 0.2
 const MIN_GROUP_NAME = 6
 // Older OpenCode builds file sessions outside any repository under this shared project ID.
 const GLOBAL_PROJECT = "global"
+// Ticks of the 100 ms timer between checks for a `.git` created after startup.
+const GIT_RECHECK_TICKS = 50
 // alt+a/b/d/e/f edit the prompt (line start/end, word moves, word delete), so they are skipped.
 const DEFAULT_KEYS = "123456789cghijklmnopqrstuvwxyz"
 const UNKNOWN_GROUP = "\u0000unknown"
@@ -49,6 +52,15 @@ function truncate(value: string, width: number) {
 function mix(from: RGBA, to: RGBA, amount: number) {
   const blend = (a: number, b: number) => a + (b - a) * amount
   return RGBA.fromValues(blend(from.r, to.r), blend(from.g, to.g), blend(from.b, to.b), blend(from.a, to.a))
+}
+
+function findGitRoot(directory: string) {
+  for (let current = path.resolve(directory); ; ) {
+    if (existsSync(path.join(current, ".git"))) return true
+    const parent = path.dirname(current)
+    if (parent === current) return false
+    current = parent
+  }
 }
 
 function moveItem<T>(items: readonly T[], from: number, to: number) {
@@ -93,6 +105,26 @@ function BetterTabs() {
     }
   })
 
+  // OpenCode never re-checks `vcs` for a known project, so a later `git init` is detected on disk.
+  const gitCache = new Map<string, boolean>()
+  const [gitVersion, setGitVersion] = createSignal(0)
+  const insideGit = (directory: string) => {
+    gitVersion()
+    let found = gitCache.get(directory)
+    if (found === undefined) gitCache.set(directory, (found = findGitRoot(directory)))
+    return found
+  }
+  const recheckGit = () => {
+    let changed = false
+    for (const [directory, found] of gitCache) {
+      const now = findGitRoot(directory)
+      if (now === found) continue
+      gitCache.set(directory, now)
+      changed = true
+    }
+    if (changed) setGitVersion((value) => value + 1)
+  }
+
   const groupOf = (sessionID: string) => {
     const session = ctx.data.session.get(sessionID)
     if (!session) return undefined
@@ -100,13 +132,13 @@ function BetterTabs() {
     if (session.projectID === GLOBAL_PROJECT) {
       const normalized = path.resolve(directory)
       const key = process.platform === "win32" ? normalized.toLowerCase() : normalized
-      return { key: `dir:${key}`, name: path.basename(normalized) || normalized, noGit: true }
+      return { key: `dir:${key}`, name: path.basename(normalized) || normalized, noGit: !insideGit(normalized) }
     }
     const project = ctx.data.project.get(session.projectID)
     const canonical = project?.canonical ?? directory
     const name = project?.name || path.basename(canonical) || canonical
     // Directories without a repository get their own project with no `vcs`.
-    return { key: session.projectID, name, noGit: !!project && !project.vcs }
+    return { key: session.projectID, name, noGit: !!project && !project.vcs && !insideGit(canonical) }
   }
 
   const titleOf = (tab: Pick<Tab, "sessionID" | "title">) =>
@@ -247,9 +279,11 @@ function BetterTabs() {
 
   const [tick, setTick] = createSignal(0)
   const anyBusy = createMemo(() => tabs().some((tab) => tab.busy))
+  let ticks = 0
   const timer = setInterval(() => {
     measure()
     if (anyBusy()) setTick((value) => (value + 1) % SPINNER.length)
+    if (++ticks % GIT_RECHECK_TICKS === 0) recheckGit()
   }, 100)
   onCleanup(() => clearInterval(timer))
 
