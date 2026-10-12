@@ -1,0 +1,41 @@
+{
+  "name": "opencode-better-tabs",
+  "version": "0.1.0",
+  "description": "Vertical session tabs for the OpenCode TUI, grouped per repository with visible keybinds",
+  "type": "module",
+  "license": "MIT",
+  "author": "igorovh",
+  "homepage": "https://github.com/igorovh/opencode-better-tabs#readme",
+  "bugs": {
+    "url": "https://github.com/igorovh/opencode-better-tabs/issues"
+  },
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/igorovh/opencode-better-tabs.git"
+  },
+  "keywords": ["opencode", "opencode-plugin", "tui", "tabs"],
+  "files": ["src", "tui.tsx", "index.ts", "README.md", "LICENSE"],
+  "exports": {
+    ".": "./src/index.ts",
+    "./tui": "./src/tui.tsx"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opencode/plugin": "^2.0.26"
+  },
+  "peerDependencies": {
+    "@opentui/core": ">=0.5.17",
+    "@opentui/solid": ">=0.5.17",
+    "solid-js": ">=1.9.0"
+  },
+  "devDependencies": {
+    "@opentui/core": "^0.6.1",
+    "@opentui/solid": "^0.6.1",
+    "@types/node": "^22.0.0",
+    "solid-js": "^1.9.17",
+    "typescript": "^5.9.0"
+  }
+}
