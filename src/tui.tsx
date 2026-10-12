@@ -24,7 +24,7 @@ const CHORD_TIMEOUT = 3000
 // How far tab titles lean from the base text colour towards the muted one.
 const TITLE_DIM = 0.2
 const MIN_GROUP_NAME = 6
-// OpenCode files sessions outside any repository under this shared project ID.
+// Older OpenCode builds file sessions outside any repository under this shared project ID.
 const GLOBAL_PROJECT = "global"
 // alt+a/b/d/e/f edit the prompt (line start/end, word moves, word delete), so they are skipped.
 const DEFAULT_KEYS = "123456789cghijklmnopqrstuvwxyz"
@@ -105,7 +105,8 @@ function BetterTabs() {
     const project = ctx.data.project.get(session.projectID)
     const canonical = project?.canonical ?? directory
     const name = project?.name || path.basename(canonical) || canonical
-    return { key: session.projectID, name, noGit: false }
+    // Directories without a repository get their own project with no `vcs`.
+    return { key: session.projectID, name, noGit: !!project && !project.vcs }
   }
 
   const titleOf = (tab: Pick<Tab, "sessionID" | "title">) =>
@@ -313,9 +314,11 @@ function BetterTabs() {
     }).catch(fail)
 
   const [hovered, setHovered] = createSignal<string>()
+  // Releasing a drag also sends "up" to whatever row is under the pointer; that is not a click.
+  let dropped = false
   const click = (event: MouseEvent, run: () => void) => {
     event.stopPropagation()
-    run()
+    if (!dropped) run()
   }
 
   const background = () => theme().background.raised.base
@@ -332,12 +335,23 @@ function BetterTabs() {
       return !!header && !header.isDestroyed && header.screenY < y
     }).length
 
-  const finishDrag = (key: string) => {
+  // Drag events go to whatever row the pointer first moved onto, so the whole bar handles them.
+  const dragMove = (event: MouseEvent) => {
     const current = drag()
-    if (!current || current.key !== key) return false
+    if (!current) return
+    const moved = current.moved || event.y !== current.startY
+    if (moved) setDrag({ ...current, moved, target: dropTarget(current.key, event.y) })
+  }
+
+  const finishDrag = () => {
+    const current = drag()
+    if (!current) return false
     setDrag(undefined)
-    if (current.moved) moveGroup(key, current.target)
-    return current.moved
+    if (!current.moved) return false
+    moveGroup(current.key, current.target)
+    dropped = true
+    setTimeout(() => (dropped = false))
+    return true
   }
 
   function GroupRow(props: { group: Group; position: number; collapsed: boolean }) {
@@ -377,21 +391,10 @@ function BetterTabs() {
           event.stopPropagation()
           setDrag({ key: props.group.key, startY: event.y, moved: false, target: props.position })
         }}
-        onMouseDrag={(event: MouseEvent) => {
-          const current = drag()
-          if (!current || current.key !== props.group.key) return
-          event.stopPropagation()
-          const moved = current.moved || event.y !== current.startY
-          if (moved) setDrag({ ...current, moved, target: dropTarget(current.key, event.y) })
-        }}
-        onMouseDragEnd={(event: MouseEvent) => {
-          event.stopPropagation()
-          finishDrag(props.group.key)
-        }}
         onMouseUp={(event: MouseEvent) =>
           click(event, () => {
             // A finished drag reorders; a plain click toggles the group.
-            if (!finishDrag(props.group.key) && event.button === 0) toggleGroup(props.group.key)
+            if (!finishDrag() && event.button === 0) toggleGroup(props.group.key)
           })
         }
       >
@@ -399,23 +402,23 @@ function BetterTabs() {
           when={!compact()}
           fallback={
             <>
-              <text fg={theme().hue.accent[200]}>
+              <text selectable={false} fg={theme().hue.accent[200]}>
                 {truncate(arrow() + props.group.name, innerWidth() - (marker() ? 1 : 0))}
               </text>
               <box flexGrow={1} />
-              <text fg={marker()?.color}>{marker()?.char ?? ""}</text>
+              <text selectable={false} fg={marker()?.color}>{marker()?.char ?? ""}</text>
             </>
           }
         >
-          <text fg={theme().text.muted}>{` ${arrow()} `}</text>
-          <text fg={dragging() ? theme().text.base : theme().hue.accent[200]}>
+          <text selectable={false} fg={theme().text.muted}>{` ${arrow()} `}</text>
+          <text selectable={false} fg={dragging() ? theme().text.base : theme().hue.accent[200]}>
             {truncate(props.group.name, nameWidth())}
           </text>
-          <text fg={theme().text.muted}>{noGitLabel()}</text>
+          <text selectable={false} fg={theme().text.muted}>{noGitLabel()}</text>
           <box flexGrow={1} />
-          <For each={counts()}>{(item) => <text fg={item.color}>{item.text + " "}</text>}</For>
+          <For each={counts()}>{(item) => <text selectable={false} fg={item.color}>{item.text + " "}</text>}</For>
           <Show when={keys()}>
-            <text fg={dragging() ? theme().text.base : selected() ? theme().hue.accent[200] : theme().text.muted}>
+            <text selectable={false} fg={dragging() ? theme().text.base : selected() ? theme().hue.accent[200] : theme().text.muted}>
               {keys() + " "}
             </text>
           </Show>
@@ -449,23 +452,23 @@ function BetterTabs() {
           })
         }
       >
-        <text fg={theme().hue.accent[300]}>{props.tab.active ? "▌" : " "}</text>
-        <text fg={status(props.tab).color}>{status(props.tab).char}</text>
+        <text selectable={false} fg={theme().hue.accent[300]}>{props.tab.active ? "▌" : " "}</text>
+        <text selectable={false} fg={status(props.tab).color}>{status(props.tab).char}</text>
         <Show
           when={!compact()}
           fallback={
-            <text fg={theme().hue.accent[200]}>
+            <text selectable={false} fg={theme().hue.accent[200]}>
               {armed() ? (slotKeys[props.position] ?? "") : ""}
             </text>
           }
         >
-          <text>{" "}</text>
-          <text fg={titleColor()}>
+          <text selectable={false}>{" "}</text>
+          <text selectable={false} fg={titleColor()}>
             {truncate(titleOf(props.tab), titleWidth())}
           </text>
           <box flexGrow={1} />
           <Show when={showKeys()}>
-            <text fg={armed() ? theme().hue.accent[200] : theme().text.muted}>{keys() + " "}</text>
+            <text selectable={false} fg={armed() ? theme().hue.accent[200] : theme().text.muted}>{keys() + " "}</text>
           </Show>
           {/* Shown on row hover; only a click on the cross itself closes the tab. */}
           <box
@@ -479,7 +482,7 @@ function BetterTabs() {
               })
             }
           >
-            <text fg={closeHovered() ? theme().text.feedback.error.base : theme().text.muted}>
+            <text selectable={false} fg={closeHovered() ? theme().text.feedback.error.base : theme().text.muted}>
               {hovered() === id() ? "✕ " : "  "}
             </text>
           </box>
@@ -531,7 +534,7 @@ function BetterTabs() {
         onMouseOut={() => setHovered(undefined)}
         onMouseUp={(event: MouseEvent) => click(event, () => ctx.keymap.dispatch("session.new"))}
       >
-        <text fg={theme().text.muted}>{compact() ? " +" : " + New session"}</text>
+        <text selectable={false} fg={theme().text.muted}>{compact() ? " +" : " + New session"}</text>
       </box>
     )
   }
@@ -710,6 +713,9 @@ function BetterTabs() {
               height={geometry().height}
               flexDirection="column"
               backgroundColor={background()}
+              onMouseDrag={dragMove}
+              onMouseDragEnd={() => finishDrag()}
+              onMouseUp={() => finishDrag()}
             >
               <scrollbox flexGrow={1} minHeight={0} scrollbarOptions={{ visible: false }}>
                 <box flexDirection="column" flexShrink={0} paddingTop={1}>
