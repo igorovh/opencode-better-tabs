@@ -268,6 +268,14 @@ function BetterTabs() {
   const [host, setHost] = createSignal<Renderable>()
   const [geometry, setGeometry] = createSignal({ width: 0, height: 0 })
   const measure = () => {
+    const slot = slotBox()
+    if (slot && !slot.isDestroyed) {
+      if (slot !== host()) setHost(slot)
+      const previous = geometry()
+      if (previous.width !== slot.width || previous.height !== slot.height)
+        setGeometry({ width: slot.width, height: slot.height })
+      return
+    }
     if (!anchor || anchor.isDestroyed) return
     const row = anchor.parent?.parent ?? undefined
     if (row !== host()) setHost(row)
@@ -768,10 +776,26 @@ function BetterTabs() {
   )
 }
 
+// Hosts that publish `session.tabs.vertical` hand us the bar's box; older hosts drop the claim and we overlay.
+const [slotBox, setSlotBox] = createSignal<BoxRenderable>()
+
+function TabsSlot(props: { width: number }) {
+  onCleanup(() => setSlotBox(undefined))
+  return <box ref={(element: BoxRenderable) => setSlotBox(element)} width={props.width} flexGrow={1} />
+}
+
 export default Plugin.define({
   id: "better-tabs",
   setup(context) {
     void context.data.project.sync().catch(() => {})
-    return context.ui.slot({ append: "app", render: () => <BetterTabs /> })
+    const disposeApp = context.ui.slot({ append: "app", render: () => <BetterTabs /> })
+    const disposeTabs = context.ui.slot({
+      replace: "session.tabs.vertical",
+      render: (input: { width: number }) => <TabsSlot width={input.width} />,
+    } as unknown as Parameters<typeof context.ui.slot>[0])
+    return () => {
+      disposeTabs()
+      disposeApp()
+    }
   },
 })
