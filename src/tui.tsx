@@ -25,6 +25,8 @@ const CHORD_TIMEOUT = 3000
 // How far tab titles lean from the base text colour towards the muted one.
 const TITLE_DIM = 0.2
 const MIN_GROUP_NAME = 6
+const MIN_STRIP_TITLE = 14
+const MAX_STRIP_TITLE = 30
 // Older OpenCode builds file sessions outside any repository under this shared project ID.
 const GLOBAL_PROJECT = "global"
 // Ticks of the 100 ms timer between checks for a `.git` created after startup.
@@ -581,6 +583,194 @@ function BetterTabs() {
     )
   }
 
+  // Horizontal strip: one row of colour-coded groups; one group shows its tabs -----------------
+
+  const activeGroupKey = createMemo(() => groups().find((group) => group.tabs.some((tab) => tab.active))?.key)
+  // A clicked group stays open until the active tab moves.
+  const [viewed, setViewed] = createSignal<string>()
+  createEffect(() => {
+    activeGroupKey()
+    setViewed(undefined)
+  })
+  const shownKey = () => pending() ?? viewed() ?? activeGroupKey() ?? groups()[0]?.key
+
+  const groupColor = (group: Group, position: number) => {
+    if (group.noGit) return theme().text.muted
+    const palette = theme().categorical
+    const scale = palette[position % palette.length]!
+    return ctx.themeMode === "dark" ? scale[300] : scale[600]
+  }
+  const tint = (color: RGBA, amount: number) => mix(background(), color, amount)
+
+  // Pill: space, key, space, name, space. Tabs: space, status, key, space, title, close button.
+  const pillWidth = (group: Group, position: number) =>
+    group.name.length + 3 + (pending() === undefined && slotKeys[position] ? 2 : 0)
+  const foldedWidth = (group: Group) => {
+    const counts = groupCounts(group, Infinity).reduce((sum, item) => sum + item.text.length + 1, 0)
+    return counts ? counts + 1 : 0
+  }
+  // Space for the open group's tabs; when they do not fit, a window around the active tab is shown.
+  const stripLayout = (width: number) => {
+    const list = groups()
+    const open = list.find((group) => group.key === shownKey())
+    if (!open) return { title: 0, ids: [] as string[], hidden: 0 }
+    const fixed = list.reduce(
+      (sum, group, position) => sum + pillWidth(group, position) + 1 + (group === open ? 0 : foldedWidth(group)),
+      4,
+    )
+    const available = width - fixed
+    const count = Math.max(1, open.tabs.length)
+    // Each tab adds 6 columns around its title: space, key, status, space, close button.
+    const even = Math.floor(available / count) - 6
+    if (even >= MIN_STRIP_TITLE)
+      return { title: Math.min(MAX_STRIP_TITLE, even), ids: open.tabs.map((tab) => tab.sessionID), hidden: 0 }
+    const fits = Math.max(1, Math.floor((available - 4) / (MIN_STRIP_TITLE + 6)))
+    const title = Math.min(MAX_STRIP_TITLE, Math.floor((available - 4) / fits) - 6)
+    const active = Math.max(0, open.tabs.findIndex((tab) => tab.active))
+    const start = Math.max(0, Math.min(count - fits, active - Math.floor(fits / 2)))
+    const ids = open.tabs.slice(start, start + fits).map((tab) => tab.sessionID)
+    return { title, ids, hidden: open.tabs.length - fits }
+  }
+
+  function StripTab(props: { tab: Tab; group: Group; color: RGBA; position: number; width: number }) {
+    const id = () => `strip:${props.tab.sessionID}`
+    const key = () => (pending() === props.group.key ? (slotKeys[props.position] ?? "") : "")
+    return (
+      <box
+        flexDirection="row"
+        height={1}
+        flexShrink={0}
+        backgroundColor={tint(props.color, props.tab.active ? 0.38 : hovered() === id() ? 0.26 : 0.14)}
+        onMouseOver={() => setHovered(id())}
+        onMouseOut={() => setHovered(undefined)}
+        onMouseUp={(event: MouseEvent) =>
+          click(event, () => {
+            if (event.button === 1) ctx.ui.tabs.close(props.tab.sessionID)
+            else if (event.button === 0) focus(props.tab.sessionID)
+          })
+        }
+      >
+        <text selectable={false}>{" "}</text>
+        <Show when={key()} fallback={<text selectable={false}>{" "}</text>}>
+          <box backgroundColor={props.color} flexShrink={0}>
+            <text selectable={false} fg={background()}>{key()}</text>
+          </box>
+        </Show>
+        <text selectable={false} fg={status(props.tab).color}>{status(props.tab).char}</text>
+        <text selectable={false} fg={props.tab.active ? theme().text.base : titleColor()}>
+          {" " + truncate(titleOf(props.tab), props.width)}
+        </text>
+        <box
+          width={2}
+          flexShrink={0}
+          onMouseUp={(event: MouseEvent) =>
+            click(event, () => {
+              if (event.button === 0 && hovered() === id()) ctx.ui.tabs.close(props.tab.sessionID)
+            })
+          }
+        >
+          <text selectable={false} fg={theme().text.muted}>{hovered() === id() ? "✕ " : "  "}</text>
+        </box>
+      </box>
+    )
+  }
+
+  function StripTabItem(props: { group: Group; color: RGBA; sessionID: string; width: number }) {
+    const tab = sticky(() => props.group.tabs.find((item) => item.sessionID === props.sessionID))
+    const position = () => props.group.tabs.findIndex((item) => item.sessionID === props.sessionID)
+    return (
+      <Show when={tab()}>
+        <StripTab
+          tab={tab()!}
+          group={props.group}
+          color={props.color}
+          position={Math.max(0, position())}
+          width={props.width}
+        />
+      </Show>
+    )
+  }
+
+  function StripGroup(props: { group: Group; position: number; width: number }) {
+    const color = () => groupColor(props.group, props.position)
+    const open = () => shownKey() === props.group.key
+    const selected = () => pending() === props.group.key
+    const key = () => (pending() === undefined ? (slotKeys[props.position] ?? "") : "")
+    const dimmed = () => pending() !== undefined && !selected()
+    return (
+      <box flexDirection="row" height={1} flexShrink={0}>
+        <box
+          flexDirection="row"
+          height={1}
+          flexShrink={0}
+          backgroundColor={dimmed() ? tint(color(), 0.3) : color()}
+          onMouseUp={(event: MouseEvent) => click(event, () => event.button === 0 && setViewed(props.group.key))}
+        >
+          <Show when={key()}>
+            <text selectable={false} fg={mix(background(), color(), 0.5)}>
+              {" " + key()}
+            </text>
+          </Show>
+          <text selectable={false} fg={dimmed() ? color() : background()}>
+            {" " + props.group.name + " "}
+          </text>
+        </box>
+        <Show
+          when={open()}
+          fallback={
+            <Show when={foldedWidth(props.group)}>
+              <box flexDirection="row" height={1} flexShrink={0} backgroundColor={tint(color(), 0.14)}>
+                <For each={groupCounts(props.group, Infinity)}>
+                  {(item) => <text selectable={false} fg={item.color}>{" " + item.text}</text>}
+                </For>
+                <text selectable={false}>{" "}</text>
+              </box>
+            </Show>
+          }
+        >
+          <For each={stripLayout(props.width).ids}>
+            {(sessionID) => (
+              <StripTabItem group={props.group} color={color()} sessionID={sessionID} width={stripLayout(props.width).title} />
+            )}
+          </For>
+          <Show when={stripLayout(props.width).hidden}>
+            <box flexShrink={0} backgroundColor={tint(color(), 0.14)}>
+              <text selectable={false} fg={theme().text.muted}>{` +${stripLayout(props.width).hidden} `}</text>
+            </box>
+          </Show>
+        </Show>
+      </box>
+    )
+  }
+
+  function Strip(props: { width: number }) {
+    return (
+      <box width={props.width} height={1} flexDirection="row" backgroundColor={background()}>
+        <For each={groupKeys()}>
+          {(key, position) => {
+            const group = sticky(() => groupByKey(key))
+            return (
+              <Show when={group()}>
+                <text selectable={false}>{" "}</text>
+                <StripGroup group={group()!} position={position()} width={props.width} />
+              </Show>
+            )
+          }}
+        </For>
+        <box flexGrow={1} />
+        <box
+          flexShrink={0}
+          backgroundColor={rowBackground("strip:new", false)}
+          onMouseOver={() => setHovered("strip:new")}
+          onMouseOut={() => setHovered(undefined)}
+          onMouseUp={(event: MouseEvent) => click(event, () => ctx.keymap.dispatch("session.new"))}
+        >
+          <text selectable={false} fg={theme().text.muted}>{" + "}</text>
+        </box>
+      </box>
+    )
+  }
+
   // Commands -----------------------------------------------------------------------------------
 
   const toggleCompact = () => {
@@ -772,16 +962,38 @@ function BetterTabs() {
           </Portal>
         )}
       </Show>
+      <Show when={ctx.ui.tabs.enabled() && tabs().length > 0 && stripSlot()} keyed>
+        {(slot) => (
+          <Portal mount={slot.box}>
+            <Strip width={slot.width()} />
+          </Portal>
+        )}
+      </Show>
     </>
   )
 }
 
-// Hosts that publish `session.tabs.vertical` hand us the bar's box; older hosts drop the claim and we overlay.
+// Hosts that publish `session.tabs.*` hand us the bar's box; older hosts drop the claims, and we overlay
+// the vertical bar only.
 const [slotBox, setSlotBox] = createSignal<BoxRenderable>()
 
 function TabsSlot(props: { width: number }) {
   onCleanup(() => setSlotBox(undefined))
   return <box ref={(element: BoxRenderable) => setSlotBox(element)} width={props.width} flexGrow={1} />
+}
+
+const [stripSlot, setStripSlot] = createSignal<{ box: BoxRenderable; width: () => number }>()
+
+function StripSlot(props: { width: number }) {
+  onCleanup(() => setStripSlot(undefined))
+  return (
+    <box
+      ref={(element: BoxRenderable) => setStripSlot({ box: element, width: () => props.width })}
+      width={props.width}
+      height={1}
+      flexShrink={0}
+    />
+  )
 }
 
 export default Plugin.define({
@@ -793,7 +1005,12 @@ export default Plugin.define({
       replace: "session.tabs.vertical",
       render: (input: { width: number }) => <TabsSlot width={input.width} />,
     } as unknown as Parameters<typeof context.ui.slot>[0])
+    const disposeStrip = context.ui.slot({
+      replace: "session.tabs.horizontal",
+      render: (input: { width: number }) => <StripSlot width={input.width} />,
+    } as unknown as Parameters<typeof context.ui.slot>[0])
     return () => {
+      disposeStrip()
       disposeTabs()
       disposeApp()
     }
