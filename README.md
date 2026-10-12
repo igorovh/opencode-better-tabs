@@ -6,23 +6,13 @@ shows how many sessions are working, waiting for you, or unread.
 
 > Supports OpenCode V2 only (built against `@opencode/plugin` 2.0.26). V1 is not supported.
 
-```
- At rest                                  After alt+1
- ▾ workspace         ⠋2 !1 •1 alt+1       ▾ workspace         ⠋2 !1 •1
-▌⠙ enhancer: marks                       ▌⠙ enhancer: marks          alt+1
- ⠙ api: rate limits                       ⠙ api: rate limits         alt+2
- ! enhancer: dashboard                    ! enhancer: dashboard      alt+3
- • docs: changelog                        • docs: changelog          alt+4
+<p align="center">
+  <img src="docs/demo.gif" alt="Grouped tabs, two-step shortcuts, collapsing, reordering, closing, compact mode and tab search" width="1000">
+</p>
 
- ▸ opencode-better-tabs        alt+2      ▸ opencode-better-tabs
-
- ▾ Downloads no git         •1 alt+3      ▾ Downloads no git         •1
- • scratch                                • scratch
-
- + New session                            + New session
-```
-
-`▌` marks the active tab, `▸` a collapsed group. A `✕` appears at the end of a tab row on hover.
+The demo shows, in order: two-step shortcuts (`alt+2` then `alt+3`), collapsing a group with a click and opening it
+with its shortcut, moving a group with `alt+↑`, dragging a group with the mouse, closing a tab with `✕`, compact
+mode, and tab search.
 
 ## Features
 
