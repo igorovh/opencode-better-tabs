@@ -663,6 +663,16 @@ function BetterTabs() {
         run: toggleHidden,
       },
       {
+        id: "better-tabs.close",
+        title: "Close current tab",
+        group: "Better tabs",
+        palette: true,
+        slash: { name: "close" },
+        run: () => {
+          if (!ctx.ui.tabs.close()) toast("No tab is open", "warning")
+        },
+      },
+      {
         id: "better-tabs.group",
         title: "Group tabs by repository",
         group: "Better tabs",

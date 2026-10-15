@@ -51,7 +51,7 @@ opencode plugin add github:igorovh/opencode-better-tabs
 To pin a release, add its tag:
 
 ```sh
-opencode plugin add github:igorovh/opencode-better-tabs#v0.1.2
+opencode plugin add github:igorovh/opencode-better-tabs#v0.1.3
 ```
 
 This adds the plugin to the global `plugins` array in `~/.config/opencode/opencode.jsonc`. Restart the TUI and the
@@ -81,6 +81,7 @@ opencode plugin remove github:igorovh/opencode-better-tabs
 | `alt+↑` / `alt+↓` (group selected) | | Move the selected group |
 | `esc`, `alt+x`, `alt+esc` (group selected) | | Cancel the selection |
 | `<leader>p` | `/tabs` | Search all tabs |
+| | `/close` | Close the current tab |
 | `<leader>k` | `/tabs-compact` | Toggle compact mode |
 | `<leader>h` | `/tabs-hide` | Show or hide the tab bar |
 | | | Palette: group tabs now, toggle automatic grouping, collapse or expand all |
