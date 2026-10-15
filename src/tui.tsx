@@ -637,7 +637,9 @@ function BetterTabs() {
     if (selected) focus(selected)
   }
 
+  // Slash completion runs while the prompt has focus, which only global layers reach.
   ctx.keymap.layer(() => ({
+    mode: "global",
     commands: [
       {
         id: "better-tabs.picker",
