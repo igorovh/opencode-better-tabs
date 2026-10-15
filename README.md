@@ -51,7 +51,7 @@ opencode plugin add github:igorovh/opencode-better-tabs
 To pin a release, add its tag:
 
 ```sh
-opencode plugin add github:igorovh/opencode-better-tabs#v0.1.4
+opencode plugin add github:igorovh/opencode-better-tabs#v0.1.5
 ```
 
 This adds the plugin to the global `plugins` array in `~/.config/opencode/opencode.jsonc`. Restart the TUI and the
