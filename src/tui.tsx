@@ -608,6 +608,10 @@ function BetterTabs() {
     }
   }
 
+  const closeCurrent = () => {
+    if (!ctx.ui.tabs.close()) toast("No tab is open", "warning")
+  }
+
   const setAllCollapsed = (collapsed: boolean) =>
     void update((draft) => {
       draft.collapsed = {}
@@ -668,9 +672,15 @@ function BetterTabs() {
         group: "Better tabs",
         palette: true,
         slash: { name: "close" },
-        run: () => {
-          if (!ctx.ui.tabs.close()) toast("No tab is open", "warning")
-        },
+        run: closeCurrent,
+      },
+      {
+        id: "better-tabs.archive",
+        title: "Archive current tab",
+        group: "Better tabs",
+        palette: true,
+        slash: { name: "archive" },
+        run: closeCurrent,
       },
       {
         id: "better-tabs.group",

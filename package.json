@@ -1,6 +1,6 @@
 {
   "name": "opencode-better-tabs",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Vertical session tabs for the OpenCode TUI, grouped per repository with visible keybinds",
   "type": "module",
   "license": "MIT",
