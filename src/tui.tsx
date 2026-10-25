@@ -5,7 +5,7 @@ import { Plugin, usePlugin } from "@opencode/plugin/tui"
 import type { Context } from "@opencode/plugin/tui/context"
 import { RGBA, type BoxRenderable, type MouseEvent, type Renderable } from "@opentui/core"
 import { Portal } from "@opentui/solid"
-import { For, Show, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, untrack, type JSX } from "solid-js"
 import {
   readTabsMode,
   readVerticalTabsWidth,
@@ -593,6 +593,9 @@ function BetterTabs() {
     setViewed(undefined)
   })
   const shownKey = () => pending() ?? viewed() ?? activeGroupKey() ?? groups()[0]?.key
+  // Hosts with `ui.tabs.Item` draw the tabs themselves, so they match the built-in bar.
+  const HostTab = (ctx.ui.tabs as { Item?: (props: { sessionID: string; width: number; label?: string }) => JSX.Element })
+    .Item
 
   const groupColor = (group: Group, position: number) => {
     if (group.noGit) return theme().text.muted
@@ -729,9 +732,17 @@ function BetterTabs() {
           }
         >
           <For each={stripLayout(props.width).ids}>
-            {(sessionID) => (
-              <StripTabItem group={props.group} color={color()} sessionID={sessionID} width={stripLayout(props.width).title} />
-            )}
+            {(sessionID) => {
+              const key = () =>
+                pending() === props.group.key
+                  ? slotKeys[props.group.tabs.findIndex((tab) => tab.sessionID === sessionID)]
+                  : undefined
+              return HostTab ? (
+                <HostTab sessionID={sessionID} width={stripLayout(props.width).title + 6} label={key()} />
+              ) : (
+                <StripTabItem group={props.group} color={color()} sessionID={sessionID} width={stripLayout(props.width).title} />
+              )
+            }}
           </For>
           <Show when={stripLayout(props.width).hidden}>
             <box flexShrink={0} backgroundColor={tint(color(), 0.14)}>
