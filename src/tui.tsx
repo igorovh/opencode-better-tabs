@@ -31,7 +31,7 @@ const MIN_GROUP_NAME = 6
 const GLOBAL_PROJECT = "global"
 // Ticks of the 100 ms timer between checks for a `.git` created after startup.
 const GIT_RECHECK_TICKS = 50
-const SYNC_RETRY = 5000
+const SYNC_RETRY = 5001
 const UNKNOWN_GROUP = "\u0000unknown"
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
