@@ -7,12 +7,12 @@ shows how many sessions are working, waiting for you, or unread.
 > Supports OpenCode V2 2.2.5 or newer. V1 is not supported.
 
 <p align="center">
-  <img src="docs/demo.gif" alt="Grouped tabs, two-step shortcuts, collapsing, reordering, closing, compact mode and tab search" width="1000">
+  <img src="docs/demo.gif" alt="Tabs grouped by repository, two-step shortcuts, moving a group, tab search and compact mode" width="1000">
 </p>
 
-The demo shows, in order: two-step shortcuts (`alt+2` then `alt+3`), collapsing a group with a click and opening it
-with its shortcut, moving a group with `alt+↑`, dragging a group with the mouse, closing a tab with `✕`, compact
-mode, and tab search.
+The demo shows tabs grouped by repository, opening a tab with two shortcuts (`alt+2`, `alt+2`), moving a group up
+with `alt+↑`, searching all tabs with `/tabs`, and compact mode. It uses made-up repositories and sessions; see
+`docs/demo.tape` to record it again.
 
 ## Features
 
