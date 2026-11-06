@@ -97,7 +97,7 @@ for (const [name, plugin] of [
     })
 
     test("a saved order is applied when sessions load at different speeds", async () => {
-      init({ collapsed: {}, autoGroup: true, expandedWidth: 42, restoreMode: "auto", groupOrder: ["gamma", "alpha", "beta"] })
+      init({ collapsed: {}, autoGroup: true, restoreMode: "auto", groupOrder: ["gamma", "alpha", "beta"] })
       const a = await start({ syncDelay: 15, writeDelay: 20 })
       const b = await start({ syncDelay: 5, writeDelay: 20 })
       await settle(a, b)

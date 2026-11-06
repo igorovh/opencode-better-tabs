@@ -8,10 +8,8 @@ import { Portal } from "@opentui/solid"
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
 import {
   readTabsMode,
-  readVerticalTabsWidth,
   tabsOverridden,
   writeTabsMode,
-  writeVerticalTabsWidth,
   type TabsMode,
 } from "./config-files"
 import { readOptions } from "./options"
@@ -19,10 +17,8 @@ import { readOptions } from "./options"
 type Tab = ReturnType<Context["ui"]["tabs"]["list"]>[number]
 type Group = { key: string; name: string; noGit: boolean; tabs: Tab[] }
 
-// Matches the host's SESSION_TABS_COMPACT_BREAKPOINT, so both bars switch modes at the same width.
-const COMPACT_BREAKPOINT = 12
-const COMPACT_WIDTH = 6
-const DEFAULT_WIDTH = 42
+// Matches the host's SESSION_TABS_COMPACT_BREAKPOINT: when the user drags its bar this narrow, both bars shrink together.
+const NARROW_BREAKPOINT = 12
 const CHORD_TIMEOUT = 3000
 // How far tab titles lean from the base text colour towards the muted one.
 const TITLE_DIM = 0.2
@@ -38,7 +34,6 @@ const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", 
 type State = {
   collapsed: Record<string, boolean>
   autoGroup: boolean
-  expandedWidth: number
   restoreMode: TabsMode
   groupOrder: string[]
 }
@@ -75,7 +70,7 @@ function BetterTabs() {
   const ctx = usePlugin()
   const theme = () => ctx.theme
   const [state, update] = ctx.storage.store<State>("state", {
-    initial: { collapsed: {}, autoGroup: true, expandedWidth: DEFAULT_WIDTH, restoreMode: "auto", groupOrder: [] },
+    initial: { collapsed: {}, autoGroup: true, restoreMode: "auto", groupOrder: [] },
   })
   const [memory, setMemory] = ctx.storage.memory<{ ids: string[] }>("memory", { initial: { ids: [] } })
 
@@ -311,7 +306,7 @@ function BetterTabs() {
 
   const visible = () => ctx.ui.tabs.enabled() && geometry().width >= 5 && tabs().length > 0
   const innerWidth = () => Math.max(1, geometry().width - 1)
-  const compact = () => geometry().width < COMPACT_BREAKPOINT
+  const narrow = () => geometry().width < NARROW_BREAKPOINT
 
   // Rows ---------------------------------------------------------------------------------------
 
@@ -455,7 +450,7 @@ function BetterTabs() {
         }
       >
         <Show
-          when={!compact()}
+          when={!narrow()}
           fallback={
             <>
               <text selectable={false} fg={theme().hue.accent[200]}>
@@ -511,7 +506,7 @@ function BetterTabs() {
         <text selectable={false} fg={theme().hue.accent[300]}>{props.tab.active ? "▌" : " "}</text>
         <text selectable={false} fg={status(props.tab).color}>{status(props.tab).char}</text>
         <Show
-          when={!compact()}
+          when={!narrow()}
           fallback={
             <text selectable={false} fg={theme().hue.accent[200]}>
               {armed() ? (slotKeys[props.position] ?? "") : ""}
@@ -590,29 +585,12 @@ function BetterTabs() {
         onMouseOut={() => setHovered(undefined)}
         onMouseUp={(event: MouseEvent) => click(event, () => ctx.keymap.dispatch("session.new"))}
       >
-        <text selectable={false} fg={theme().text.muted}>{compact() ? " +" : " + New session"}</text>
+        <text selectable={false} fg={theme().text.muted}>{narrow() ? " +" : " + New session"}</text>
       </box>
     )
   }
 
   // Commands -----------------------------------------------------------------------------------
-
-  const toggleCompact = () => {
-    try {
-      const current = readVerticalTabsWidth(ctx.app.channel) ?? geometry().width
-      if (current < COMPACT_BREAKPOINT) {
-        writeVerticalTabsWidth(
-          ctx.app.channel,
-          state.expandedWidth >= COMPACT_BREAKPOINT ? state.expandedWidth : DEFAULT_WIDTH,
-        )
-        return
-      }
-      void update((draft) => void (draft.expandedWidth = current)).catch(fail)
-      writeVerticalTabsWidth(ctx.app.channel, COMPACT_WIDTH)
-    } catch (error) {
-      fail(error)
-    }
-  }
 
   const toggleHidden = () => {
     try {
@@ -671,15 +649,6 @@ function BetterTabs() {
         palette: true,
         slash: { name: "tabs" },
         run: () => void openPicker().catch(fail),
-      },
-      {
-        id: "better-tabs.compact",
-        title: "Toggle compact tabs",
-        group: "Better tabs",
-        bind: "<leader>k",
-        palette: true,
-        slash: { name: "tabs-compact" },
-        run: toggleCompact,
       },
       {
         id: "better-tabs.hide",

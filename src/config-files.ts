@@ -13,12 +13,6 @@ export function cliConfigPath() {
   return path.join(base, "cli.json")
 }
 
-// Mirrors the host TUI storage root (`<state>/<channel>/tui`), which it watches for external edits.
-export function hostLayoutPath(channel: string) {
-  const base = process.env.XDG_STATE_HOME || path.join(home(), ".local", "state")
-  return path.join(base, "opencode", channel, "tui", "layout.json")
-}
-
 function parseObject(text: string, source: string): Record<string, any> {
   const errors: ParseError[] = []
   const value = parse(text, errors, { allowTrailingComma: true })
@@ -92,13 +86,4 @@ export function writeTabsMode(mode: TabsMode) {
   writeValue(file, ["tabs", "mode"], mode)
   // The legacy boolean would contradict the new mode.
   if (readObject(file).tabs?.enabled !== undefined) writeValue(file, ["tabs", "enabled"], undefined)
-}
-
-export function readVerticalTabsWidth(channel: string): number | undefined {
-  const width = readObject(hostLayoutPath(channel)).verticalTabsWidth
-  return typeof width === "number" ? width : undefined
-}
-
-export function writeVerticalTabsWidth(channel: string, width: number) {
-  writeValue(hostLayoutPath(channel), ["verticalTabsWidth"], width)
 }

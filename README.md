@@ -7,11 +7,11 @@ shows how many sessions are working, waiting for you, or unread.
 > Supports OpenCode V2 2.2.5 or newer. V1 is not supported.
 
 <p align="center">
-  <img src="docs/demo.gif" alt="Tabs grouped by repository, two-step shortcuts, moving a group, tab search and compact mode" width="1000">
+  <img src="docs/demo.gif" alt="Tabs grouped by repository, two-step shortcuts, moving a group and tab search" width="1000">
 </p>
 
 The demo shows tabs grouped by repository, opening a tab with two shortcuts (`alt+2`, `alt+2`), moving a group up
-with `alt+↑`, searching all tabs with `/tabs`, and compact mode. It uses made-up repositories and sessions; see
+with `alt+↑`, and searching all tabs with `/tabs`. It uses made-up repositories and sessions; see
 `docs/demo.tape` to record it again.
 
 ## Features
@@ -34,7 +34,7 @@ with `alt+↑`, searching all tabs with `/tabs`, and compact mode. It uses made-
 - **Reorder groups** by dragging a header with the mouse, or select a group with `alt+N` and press
   `alt+↑` / `alt+↓`. The order is saved and the built-in tab order follows it.
 - **Close tabs** with the `✕` that appears on hover, or with a middle click.
-- **Compact mode and hiding** the bar, through commands.
+- **Hide the bar** with a command, and show it again.
 
 ## Requirements
 
@@ -47,7 +47,7 @@ Install a release from GitHub with the OpenCode CLI. Pin the tag: a pinned insta
 when a newer release exists.
 
 ```sh
-opencode plugin add github:igorovh/opencode-better-tabs#v0.2.0
+opencode plugin add github:igorovh/opencode-better-tabs#v0.3.0
 ```
 
 This adds the plugin to the global `plugins` array in `~/.config/opencode/opencode.jsonc`. Restart the TUI and the
@@ -58,14 +58,14 @@ You can also add the entry to the config yourself:
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugins": ["github:igorovh/opencode-better-tabs#v0.2.0"]
+  "plugins": ["github:igorovh/opencode-better-tabs#v0.3.0"]
 }
 ```
 
 To move to a newer release, change the tag. To remove the plugin:
 
 ```sh
-opencode plugin remove github:igorovh/opencode-better-tabs#v0.2.0
+opencode plugin remove github:igorovh/opencode-better-tabs#v0.3.0
 ```
 
 ## Keys and commands
@@ -77,7 +77,6 @@ opencode plugin remove github:igorovh/opencode-better-tabs#v0.2.0
 | `esc`, `alt+x`, `alt+esc` (group selected) | | Cancel the selection |
 | `<leader>p` | `/tabs` | Search all tabs |
 | | `/close`, `/archive` | Close the current tab (the session is kept) |
-| `<leader>k` | `/tabs-compact` | Toggle compact mode |
 | `<leader>h` | `/tabs-hide` | Show or hide the tab bar |
 | | | Palette: group tabs now, toggle automatic grouping, collapse or expand all |
 
@@ -94,7 +93,7 @@ Add an entry to `cli.json` whose `package` is exactly the same string as in `ope
 {
   "plugins": [
     {
-      "package": "github:igorovh/opencode-better-tabs#v0.2.0",
+      "package": "github:igorovh/opencode-better-tabs#v0.3.0",
       "options": { "modifier": "alt", "keys": "123456789cghijklmnopqrstuvwxyz" }
     }
   ]
@@ -116,7 +115,7 @@ to turn it off:
 }
 ```
 
-The IDs are `better-tabs.picker`, `better-tabs.compact` and `better-tabs.hide`.
+The IDs are `better-tabs.picker` and `better-tabs.hide`.
 
 ## How it works
 
@@ -130,8 +129,6 @@ The plugin ships JSX that is already compiled, in `dist/`. OpenCode compiles Sol
 OpenCode shares with plugins (`@opencode/plugin`, `@opentui/core`, `@opentui/solid`, `solid-js`), so the plugin uses
 the host's own copies.
 
-- **Compact mode** writes `verticalTabsWidth` to OpenCode's `layout.json` in its state directory
-  (`$XDG_STATE_HOME/opencode/<channel>/tui/`, by default under `~/.local/state`).
 - **Hiding** writes `tabs.mode` to `cli.json`. Only that value changes; comments and other settings stay. If
   `OPENCODE_CLI_CONFIG_CONTENT` sets `tabs`, that wins and the toggle has no effect.
 - The plugin makes no network requests and runs no commands.

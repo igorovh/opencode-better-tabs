@@ -1341,10 +1341,6 @@ function cliConfigPath() {
   const base = process.env.OPENCODE_CONFIG_DIR || path.join(process.env.XDG_CONFIG_HOME || path.join(home(), ".config"), "opencode");
   return path.join(base, "cli.json");
 }
-function hostLayoutPath(channel) {
-  const base = process.env.XDG_STATE_HOME || path.join(home(), ".local", "state");
-  return path.join(base, "opencode", channel, "tui", "layout.json");
-}
 function parseObject(text, source) {
   const errors = [];
   const value = parse2(text, errors, { allowTrailingComma: true });
@@ -1416,13 +1412,6 @@ function writeTabsMode(mode) {
   if (readObject(file).tabs?.enabled !== undefined)
     writeValue(file, ["tabs", "enabled"], undefined);
 }
-function readVerticalTabsWidth(channel) {
-  const width = readObject(hostLayoutPath(channel)).verticalTabsWidth;
-  return typeof width === "number" ? width : undefined;
-}
-function writeVerticalTabsWidth(channel, width) {
-  writeValue(hostLayoutPath(channel), ["verticalTabsWidth"], width);
-}
 
 var DEFAULT_KEYS = "123456789cghijklmnopqrstuvwxyz";
 var DEFAULT_MODIFIER = "alt";
@@ -1448,9 +1437,7 @@ function readOptions(raw) {
   return { modifier, slotKeys, warnings };
 }
 
-var COMPACT_BREAKPOINT = 12;
-var COMPACT_WIDTH = 6;
-var DEFAULT_WIDTH = 42;
+var NARROW_BREAKPOINT = 12;
 var CHORD_TIMEOUT = 3000;
 var TITLE_DIM = 0.2;
 var MIN_GROUP_NAME = 6;
@@ -1495,7 +1482,6 @@ function BetterTabs() {
     initial: {
       collapsed: {},
       autoGroup: true,
-      expandedWidth: DEFAULT_WIDTH,
       restoreMode: "auto",
       groupOrder: []
     }
@@ -1755,7 +1741,7 @@ function BetterTabs() {
   onCleanup(() => clearInterval(timer));
   const visible = () => ctx.ui.tabs.enabled() && geometry().width >= 5 && tabs().length > 0;
   const innerWidth = () => Math.max(1, geometry().width - 1);
-  const compact = () => geometry().width < COMPACT_BREAKPOINT;
+  const narrow = () => geometry().width < NARROW_BREAKPOINT;
   const groupKeys = createMemo(() => groups().map((group) => group.key), [], {
     equals: (a, b) => a.length === b.length && a.every((key, index) => key === b[index])
   });
@@ -1913,7 +1899,7 @@ function BetterTabs() {
       }));
       _$insert(_el$, _$createComponent(Show, {
         get when() {
-          return !compact();
+          return !narrow();
         },
         get fallback() {
           return [(() => {
@@ -2015,7 +2001,7 @@ function BetterTabs() {
       _$insert(_el$11, () => status(props.tab).char);
       _$insert(_el$1, _$createComponent(Show, {
         get when() {
-          return !compact();
+          return !narrow();
         },
         get fallback() {
           return (() => {
@@ -2166,7 +2152,7 @@ function BetterTabs() {
       _$setProp(_el$21, "onMouseOut", () => setHovered(undefined));
       _$setProp(_el$21, "onMouseUp", (event) => click(event, () => ctx.keymap.dispatch("session.new")));
       _$setProp(_el$22, "selectable", false);
-      _$insert(_el$22, () => compact() ? " +" : " + New session");
+      _$insert(_el$22, () => narrow() ? " +" : " + New session");
       _$effect((_p$) => {
         var _v$4 = rowBackground("new", false), _v$5 = theme().text.muted;
         _v$4 !== _p$.e && (_p$.e = _$setProp(_el$21, "backgroundColor", _v$4, _p$.e));
@@ -2179,19 +2165,6 @@ function BetterTabs() {
       return _el$21;
     })();
   }
-  const toggleCompact = () => {
-    try {
-      const current = readVerticalTabsWidth(ctx.app.channel) ?? geometry().width;
-      if (current < COMPACT_BREAKPOINT) {
-        writeVerticalTabsWidth(ctx.app.channel, state.expandedWidth >= COMPACT_BREAKPOINT ? state.expandedWidth : DEFAULT_WIDTH);
-        return;
-      }
-      update((draft) => void (draft.expandedWidth = current)).catch(fail);
-      writeVerticalTabsWidth(ctx.app.channel, COMPACT_WIDTH);
-    } catch (error) {
-      fail(error);
-    }
-  };
   const toggleHidden = () => {
     try {
       if (tabsOverridden())
@@ -2245,16 +2218,6 @@ function BetterTabs() {
         name: "tabs"
       },
       run: () => void openPicker().catch(fail)
-    }, {
-      id: "better-tabs.compact",
-      title: "Toggle compact tabs",
-      group: "Better tabs",
-      bind: "<leader>k",
-      palette: true,
-      slash: {
-        name: "tabs-compact"
-      },
-      run: toggleCompact
     }, {
       id: "better-tabs.hide",
       title: "Show or hide tabs",
