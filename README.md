@@ -4,7 +4,7 @@ A plugin for the [OpenCode](https://opencode.ai) TUI (v2) that redraws the verti
 tabs are grouped by git repository, every group and tab has a visible keyboard shortcut, and each group header
 shows how many sessions are working, waiting for you, or unread.
 
-> Supports OpenCode V2 only (built against `@opencode/plugin` 2.0.26). V1 is not supported.
+> Supports OpenCode V2 2.2.5 or newer. V1 is not supported.
 
 <p align="center">
   <img src="docs/demo.gif" alt="Grouped tabs, two-step shortcuts, collapsing, reordering, closing, compact mode and tab search" width="1000">
@@ -38,20 +38,16 @@ mode, and tab search.
 
 ## Requirements
 
-- OpenCode V2 2.0.26 or newer, with vertical tabs.
+- OpenCode V2 2.2.5 or newer, with vertical tabs.
+- Windows, macOS or Linux. No other tools are needed: the plugin ships compiled JavaScript.
 
 ## Install
 
-Install the plugin from GitHub with the OpenCode CLI:
+Install a release from GitHub with the OpenCode CLI. Pin the tag: a pinned install is cached and OpenCode can tell
+when a newer release exists.
 
 ```sh
-opencode plugin add github:igorovh/opencode-better-tabs
-```
-
-To pin a release, add its tag:
-
-```sh
-opencode plugin add github:igorovh/opencode-better-tabs#v0.1.5
+opencode plugin add github:igorovh/opencode-better-tabs#v0.2.0
 ```
 
 This adds the plugin to the global `plugins` array in `~/.config/opencode/opencode.jsonc`. Restart the TUI and the
@@ -62,15 +58,14 @@ You can also add the entry to the config yourself:
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugins": ["github:igorovh/opencode-better-tabs"]
+  "plugins": ["github:igorovh/opencode-better-tabs#v0.2.0"]
 }
 ```
 
-Update or remove it later:
+To move to a newer release, change the tag. To remove the plugin:
 
 ```sh
-opencode plugin update github:igorovh/opencode-better-tabs
-opencode plugin remove github:igorovh/opencode-better-tabs
+opencode plugin remove github:igorovh/opencode-better-tabs#v0.2.0
 ```
 
 ## Keys and commands
@@ -91,19 +86,37 @@ OpenCode uses `alt+a/b/d/e/f` to edit the prompt. Groups and the tabs inside a g
 
 ## Options
 
+The tab bar runs in the TUI, and OpenCode passes plugin options to the TUI only from `~/.config/opencode/cli.json`
+(or `$OPENCODE_CONFIG_DIR/cli.json`). Options in `opencode.jsonc` reach only the server part, which does nothing.
+Add an entry to `cli.json` whose `package` is exactly the same string as in `opencode.jsonc`, tag included:
+
 ```jsonc
 {
   "plugins": [
     {
-      "package": "github:igorovh/opencode-better-tabs",
+      "package": "github:igorovh/opencode-better-tabs#v0.2.0",
       "options": { "modifier": "alt", "keys": "123456789cghijklmnopqrstuvwxyz" }
     }
   ]
 }
 ```
 
-- `modifier`: modifier for the shortcuts. The default is `alt` because many terminals send `ctrl+1` as a plain `1`.
+`opencode plugin add` does not write options, so add this entry yourself.
+
+- `modifier`: modifier for the shortcuts, such as `alt`, `ctrl` or `ctrl+shift`. The default is `alt` because many
+  terminals send `ctrl+1` as a plain `1`. An invalid value shows a warning and falls back to `alt`.
 - `keys`: the key pool, in order. Only `a`–`z` and `0`–`9` are used.
+
+To change or turn off a command shortcut, set its command ID under `keybinds` in the same `cli.json`. Use `"none"`
+to turn it off:
+
+```jsonc
+{
+  "keybinds": { "better-tabs.picker": "ctrl+t", "better-tabs.hide": "none" }
+}
+```
+
+The IDs are `better-tabs.picker`, `better-tabs.compact` and `better-tabs.hide`.
 
 ## How it works
 
@@ -111,9 +124,17 @@ The plugin renders an overlay on top of OpenCode's own vertical tab bar and read
 `ui.tabs` plugin API. It does not patch OpenCode, so the built-in bar is still underneath, and resizing it
 resizes the overlay.
 
-- **Compact mode** writes `verticalTabsWidth` to OpenCode's `layout.json` in its state directory.
-- **Hiding** writes `tabs.mode` to `~/.config/opencode/cli.json`. If `OPENCODE_CLI_CONFIG_CONTENT` sets `tabs`,
-  that wins and the toggle has no effect.
+The plugin ships JSX that is already compiled, in `dist/`. OpenCode compiles Solid JSX only for plugins outside
+`node_modules`, and a GitHub install lives in its package cache
+([anomalyco/opencode#39986](https://github.com/anomalyco/opencode/issues/39986)). `dist/` imports only the modules
+OpenCode shares with plugins (`@opencode/plugin`, `@opentui/core`, `@opentui/solid`, `solid-js`), so the plugin uses
+the host's own copies.
+
+- **Compact mode** writes `verticalTabsWidth` to OpenCode's `layout.json` in its state directory
+  (`$XDG_STATE_HOME/opencode/<channel>/tui/`, by default under `~/.local/state`).
+- **Hiding** writes `tabs.mode` to `cli.json`. Only that value changes; comments and other settings stay. If
+  `OPENCODE_CLI_CONFIG_CONTENT` sets `tabs`, that wins and the toggle has no effect.
+- The plugin makes no network requests and runs no commands.
 
 ## Development
 
@@ -124,15 +145,23 @@ git clone https://github.com/igorovh/opencode-better-tabs.git
 cd opencode-better-tabs
 bun install
 bun run typecheck
+bun test
 ```
 
-To run your checkout instead of the published plugin, put its path in `plugins` and restart the TUI. After that,
-OpenCode reloads the plugin whenever a file changes.
+The sources are in `src/`, but OpenCode loads `dist/`. Run `bun run compile` after a change and commit `dist/`
+together with the sources; CI fails when they differ.
+
+To run your checkout instead of the published plugin, put its path in `plugins` and keep the compiler running.
+OpenCode reloads the plugin whenever `dist/` changes.
 
 ```jsonc
 {
   "plugins": ["/path/to/opencode-better-tabs"]
 }
+```
+
+```sh
+bun run compile --watch
 ```
 
 ## License

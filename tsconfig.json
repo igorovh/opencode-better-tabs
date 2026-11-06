@@ -6,9 +6,10 @@
     "jsx": "preserve",
     "jsxImportSource": "@opentui/solid",
     "strict": true,
+    "allowJs": true,
     "skipLibCheck": true,
     "noEmit": true,
-    "types": ["node"]
+    "types": ["bun"]
   },
-  "include": ["src", "tui.tsx", "index.ts"]
+  "include": ["src", "test", "scripts"]
 }
