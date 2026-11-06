@@ -9,10 +9,12 @@ import { For, Show, createEffect, createMemo, createSignal, onCleanup, untrack }
 import {
   readTabsMode,
   readVerticalTabsWidth,
+  tabsOverridden,
   writeTabsMode,
   writeVerticalTabsWidth,
   type TabsMode,
 } from "./config-files"
+import { readOptions } from "./options"
 
 type Tab = ReturnType<Context["ui"]["tabs"]["list"]>[number]
 type Group = { key: string; name: string; noGit: boolean; tabs: Tab[] }
@@ -29,8 +31,7 @@ const MIN_GROUP_NAME = 6
 const GLOBAL_PROJECT = "global"
 // Ticks of the 100 ms timer between checks for a `.git` created after startup.
 const GIT_RECHECK_TICKS = 50
-// alt+a/b/d/e/f edit the prompt (line start/end, word moves, word delete), so they are skipped.
-const DEFAULT_KEYS = "123456789cghijklmnopqrstuvwxyz"
+const SYNC_RETRY = 5000
 const UNKNOWN_GROUP = "\u0000unknown"
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
@@ -96,12 +97,25 @@ function BetterTabs() {
     if (ids.length) setMemory((draft) => void (draft.ids = ids))
   })
 
+  // A failed sync is retried later; otherwise the tab would stay in the "…" group for good.
   const requested = new Set<string>()
+  const [syncRetry, setSyncRetry] = createSignal(0)
+  const retryTimers = new Set<ReturnType<typeof setTimeout>>()
+  onCleanup(() => retryTimers.forEach(clearTimeout))
   createEffect(() => {
+    syncRetry()
     for (const tab of tabs()) {
-      if (ctx.data.session.get(tab.sessionID) || requested.has(tab.sessionID)) continue
-      requested.add(tab.sessionID)
-      void ctx.data.session.sync(tab.sessionID).catch(() => {})
+      const sessionID = tab.sessionID
+      if (ctx.data.session.get(sessionID) || requested.has(sessionID)) continue
+      requested.add(sessionID)
+      void ctx.data.session.sync(sessionID).catch(() => {
+        const timer = setTimeout(() => {
+          retryTimers.delete(timer)
+          requested.delete(sessionID)
+          setSyncRetry((value) => value + 1)
+        }, SYNC_RETRY)
+        retryTimers.add(timer)
+      })
     }
   })
 
@@ -131,7 +145,8 @@ function BetterTabs() {
     const directory = session.location.directory
     if (session.projectID === GLOBAL_PROJECT) {
       const normalized = path.resolve(directory)
-      const key = process.platform === "win32" ? normalized.toLowerCase() : normalized
+      // Default Windows and macOS file systems ignore case, so `~/Repo` and `~/repo` are one folder.
+      const key = process.platform === "win32" || process.platform === "darwin" ? normalized.toLowerCase() : normalized
       return { key: `dir:${key}`, name: path.basename(normalized) || normalized, noGit: !insideGit(normalized) }
     }
     const project = ctx.data.project.get(session.projectID)
@@ -144,6 +159,10 @@ function BetterTabs() {
   const titleOf = (tab: Pick<Tab, "sessionID" | "title">) =>
     ctx.data.session.get(tab.sessionID)?.title ?? tab.title ?? "Untitled session"
 
+  // Saving the order is async, so moves made before it lands use this local copy instead.
+  const [localOrder, setLocalOrder] = createSignal<string[]>()
+  let orderWrites = 0
+
   // Groups in their saved order; groups without a saved position follow in tab order.
   const orderedGroups = createMemo(() => {
     const result = new Map<string, Group>()
@@ -153,7 +172,7 @@ function BetterTabs() {
       group.tabs.push(tab)
       result.set(info.key, group)
     }
-    const order = state.groupOrder ?? []
+    const order = localOrder() ?? state.groupOrder ?? []
     const rank = (key: string) => {
       const index = order.indexOf(key)
       return index === -1 ? order.length : index
@@ -176,9 +195,14 @@ function BetterTabs() {
     const from = list.indexOf(key)
     if (from === -1) return
     const next = moveItem(list, from, to)
-    void update((draft) => {
-      draft.groupOrder = [...next, ...(draft.groupOrder ?? []).filter((item) => !next.includes(item))]
-    }).catch(fail)
+    const merge = (saved: readonly string[] = []) => [...next, ...saved.filter((item) => !next.includes(item))]
+    setLocalOrder(merge(localOrder() ?? state.groupOrder))
+    const write = ++orderWrites
+    void update((draft) => void (draft.groupOrder = merge(draft.groupOrder)))
+      .catch(fail)
+      .finally(() => {
+        if (write === orderWrites) setLocalOrder(undefined)
+      })
   }
 
   // Order the host's tabs like our groups, so both bars agree.
@@ -206,11 +230,9 @@ function BetterTabs() {
   }
 
   // Two-step shortcuts: alt+G picks group G, then alt+T opens tab T of that group ----------------
-  // Many terminals send ctrl+digit as a plain digit, so the modifier defaults to alt.
-  const modifier = typeof ctx.options.modifier === "string" ? ctx.options.modifier : "alt"
-  const slotKeys = [
-    ...new Set((typeof ctx.options.keys === "string" ? ctx.options.keys : DEFAULT_KEYS).toLowerCase()),
-  ].filter((key) => /^[a-z0-9]$/.test(key))
+  const options = readOptions(ctx.options)
+  for (const warning of options.warnings) toast(warning, "warning")
+  const { modifier, slotKeys } = options
 
   // The selected group is tracked by key: saving a new order is async, so positions lag behind.
   const [pending, setPending] = createSignal<string>()
@@ -594,7 +616,7 @@ function BetterTabs() {
 
   const toggleHidden = () => {
     try {
-      if (process.env.OPENCODE_CLI_CONFIG_CONTENT?.includes('"tabs"'))
+      if (tabsOverridden())
         toast("OPENCODE_CLI_CONFIG_CONTENT overrides tabs, so cli.json changes have no effect", "warning")
       const mode = readTabsMode()
       if (mode === "off") {
