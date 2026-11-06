@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
+import compiledPlugin from "../dist/tui.js"
 import sourcePlugin from "../src/tui"
 import { readJson, sleep, startTui, type Session, type Tui } from "./harness"
 
@@ -35,7 +36,11 @@ const init = (state?: object) => {
   if (state) writeFileSync(path.join(dir, "state.json"), JSON.stringify(state))
 }
 
-for (const [name, plugin] of [["source", sourcePlugin]] as const) {
+// The compiled build is what a GitHub install loads; it must render and react like the source.
+for (const [name, plugin] of [
+  ["source", sourcePlugin],
+  ["dist", compiledPlugin],
+] as const) {
   describe(name, () => {
     const start = async (options: { syncDelay?: number; writeDelay?: number } = {}) => {
       const tui = await startTui({ stateDir: dir, sessions, plugin, ...options })

@@ -14,26 +14,14 @@
     "type": "git",
     "url": "git+https://github.com/igorovh/opencode-better-tabs.git"
   },
-  "keywords": [
-    "opencode",
-    "opencode-plugin",
-    "opencode-v2",
-    "tui",
-    "tabs",
-    "vertical-tabs",
-    "opentui",
-    "solidjs"
-  ],
-  "files": [
-    "src",
-    "README.md",
-    "LICENSE"
-  ],
+  "keywords": ["opencode", "opencode-plugin", "opencode-v2", "tui", "tabs", "vertical-tabs", "opentui", "solidjs"],
+  "files": ["dist", "README.md", "LICENSE"],
   "exports": {
-    ".": "./src/index.ts",
-    "./tui": "./src/tui.tsx"
+    ".": "./dist/index.js",
+    "./tui": "./dist/tui.js"
   },
   "scripts": {
+    "compile": "bun scripts/compile.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
