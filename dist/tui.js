@@ -1456,7 +1456,7 @@ var TITLE_DIM = 0.2;
 var MIN_GROUP_NAME = 6;
 var GLOBAL_PROJECT = "global";
 var GIT_RECHECK_TICKS = 50;
-var SYNC_RETRY = 5000;
+var SYNC_RETRY = 5001;
 var UNKNOWN_GROUP = "\x00unknown";
 var SPINNER = ["\u280B", "\u2819", "\u2839", "\u2838", "\u283C", "\u2834", "\u2826", "\u2827", "\u2807", "\u280F"];
 function truncate(value, width) {
