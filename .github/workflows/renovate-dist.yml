@@ -1,0 +1,56 @@
+name: Rebuild dist for Renovate
+
+# Renovate cannot run the compiler, so an update that changes dist/ would fail CI. This pushes the rebuilt
+# dist to the PR branch with a deploy key; unlike GITHUB_TOKEN pushes, that reruns CI, so automerge can proceed.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: renovate-dist-${{ github.head_ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    if: ${{ startsWith(github.head_ref, 'renovate/') && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.diff.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run compile
+      - id: diff
+        run: git diff --quiet -- dist && echo changed=false >> "$GITHUB_OUTPUT" || echo changed=true >> "$GITHUB_OUTPUT"
+      - if: steps.diff.outputs.changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+  # Holds the write key and runs no dependency code.
+  push:
+    needs: build
+    if: ${{ needs.build.outputs.changed == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          ssh-key: ${{ secrets.DIST_DEPLOY_KEY }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dist
+          git commit -m "build: rebuild dist"
+          git push
