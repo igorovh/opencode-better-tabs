@@ -4,15 +4,12 @@ import os from "node:os"
 import path from "node:path"
 import {
   cliConfigPath,
-  hostLayoutPath,
   readTabsMode,
-  readVerticalTabsWidth,
   tabsOverridden,
   writeTabsMode,
-  writeVerticalTabsWidth,
 } from "../src/config-files"
 
-const KEYS = ["OPENCODE_CONFIG_DIR", "XDG_CONFIG_HOME", "XDG_STATE_HOME", "OPENCODE_CLI_CONFIG_CONTENT"] as const
+const KEYS = ["OPENCODE_CONFIG_DIR", "XDG_CONFIG_HOME", "OPENCODE_CLI_CONFIG_CONTENT"] as const
 let saved: Record<string, string | undefined>
 let dir: string
 
@@ -21,7 +18,6 @@ beforeEach(() => {
   for (const key of KEYS) delete process.env[key]
   dir = mkdtempSync(path.join(os.tmpdir(), "better-tabs-config-"))
   process.env.XDG_CONFIG_HOME = path.join(dir, "config")
-  process.env.XDG_STATE_HOME = path.join(dir, "state")
 })
 
 afterEach(() => {
@@ -60,18 +56,6 @@ test("a broken cli.json is reported and left untouched", () => {
   writeFileSync(file, '{ "tabs": ')
   expect(() => writeTabsMode("off")).toThrow("not a valid JSON object")
   expect(readFileSync(file, "utf8")).toBe('{ "tabs": ')
-})
-
-test("compact mode writes only verticalTabsWidth in the host layout", () => {
-  const file = hostLayoutPath("latest")
-  expect(file).toBe(path.join(dir, "state", "opencode", "latest", "tui", "layout.json"))
-  expect(readVerticalTabsWidth("latest")).toBeUndefined()
-  mkdirSync(path.dirname(file), { recursive: true })
-  writeFileSync(file, JSON.stringify({ paneWidth: 80, verticalTabsWidth: 40 }))
-
-  writeVerticalTabsWidth("latest", 6)
-
-  expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({ paneWidth: 80, verticalTabsWidth: 6 })
 })
 
 test("only a tabs key in OPENCODE_CLI_CONFIG_CONTENT overrides cli.json", () => {

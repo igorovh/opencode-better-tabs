@@ -42,20 +42,10 @@ Type "/tabs"
 Sleep 0.6s
 Enter
 Sleep 1s
-Type "landing"
+Type "roadmap"
 Sleep 1s
 Enter
-Sleep 2s
-
-# Compact mode and back.
-Type "/tabs-compact"
-Sleep 0.6s
-Enter
-Sleep 2.2s
-Type "/tabs-compact"
-Sleep 0.6s
-Enter
-Sleep 2s
+Sleep 3s
 
 Hide
 Ctrl+C
