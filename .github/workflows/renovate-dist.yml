@@ -29,7 +29,7 @@ jobs:
       - id: diff
         run: git diff --quiet -- dist && echo changed=false >> "$GITHUB_OUTPUT" || echo changed=true >> "$GITHUB_OUTPUT"
       - if: steps.diff.outputs.changed == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist
@@ -44,7 +44,7 @@ jobs:
         with:
           ref: ${{ github.head_ref }}
           ssh-key: ${{ secrets.DIST_DEPLOY_KEY }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: dist
           path: dist
