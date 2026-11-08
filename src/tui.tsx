@@ -227,7 +227,12 @@ function BetterTabs() {
   // Two-step shortcuts: alt+G picks group G, then alt+T opens tab T of that group ----------------
   const options = readOptions(ctx.options)
   for (const warning of options.warnings) toast(warning, "warning")
-  const { modifier, slotKeys } = options
+  const { modifier, slotKeys, padding } = options
+
+  // A row is one line of text, padded with blank lines above and below it so the hover and active
+  // backgrounds get some air around the label. Terminal rows are one cell tall, so a gap is a
+  // whole blank line.
+  const rowHeight = 1 + padding * 2
 
   // The selected group is tracked by key: saving a new order is async, so positions lag behind.
   const [pending, setPending] = createSignal<string>()
@@ -377,13 +382,14 @@ function BetterTabs() {
   const rowBackground = (id: string, active: boolean) =>
     active ? theme().background.raised.max : hovered() === id ? theme().background.raised.high : background()
 
-  // Drop position among the other groups, from where their headers sit on screen.
+  // Drop position among the other groups, from where their headers sit on screen. Compare against
+  // the middle of the header so dropping on a padded row still means "on that header".
   const headers = new Map<string, BoxRenderable>()
   const dropTarget = (key: string, y: number) =>
     orderedGroups().filter((group) => {
       if (group.key === key) return false
       const header = headers.get(group.key)
-      return !!header && !header.isDestroyed && header.screenY < y
+      return !!header && !header.isDestroyed && header.screenY + (header.height - 1) / 2 < y
     }).length
 
   // Drag events go to whatever row the pointer first moved onto, so the whole bar handles them.
@@ -426,8 +432,9 @@ function BetterTabs() {
       <box
         ref={(element: BoxRenderable) => headers.set(props.group.key, (header = element))}
         flexDirection="row"
-        height={1}
+        height={rowHeight}
         flexShrink={0}
+        paddingTop={padding}
         backgroundColor={
           dragging()
             ? theme().background.action.primary.selected
@@ -491,8 +498,9 @@ function BetterTabs() {
     return (
       <box
         flexDirection="row"
-        height={1}
+        height={rowHeight}
         flexShrink={0}
+        paddingTop={padding}
         backgroundColor={dragged() ? theme().background.raised.high : rowBackground(id(), props.tab.active)}
         onMouseOver={() => setHovered(id())}
         onMouseOut={() => setHovered(undefined)}
@@ -578,8 +586,9 @@ function BetterTabs() {
     return (
       <box
         flexDirection="row"
-        height={1}
+        height={rowHeight}
         flexShrink={0}
+        paddingTop={padding}
         backgroundColor={rowBackground("new", false)}
         onMouseOver={() => setHovered("new")}
         onMouseOut={() => setHovered(undefined)}

@@ -1415,6 +1415,8 @@ function writeTabsMode(mode) {
 
 var DEFAULT_KEYS = "123456789cghijklmnopqrstuvwxyz";
 var DEFAULT_MODIFIER = "alt";
+var DEFAULT_PADDING = 0;
+var MAX_PADDING = 3;
 var MODIFIERS = new Set(["alt", "ctrl", "shift", "meta", "super", "hyper"]);
 function readOptions(raw) {
   const warnings = [];
@@ -1434,7 +1436,14 @@ function readOptions(raw) {
       warnings.push(`Ignoring keys ${JSON.stringify(raw.keys)}; it needs at least one of a-z or 0-9`);
   }
   const slotKeys = [...new Set(keys.toLowerCase())].filter((key) => /^[a-z0-9]$/.test(key));
-  return { modifier, slotKeys, warnings };
+  let padding = DEFAULT_PADDING;
+  if (raw?.padding !== undefined) {
+    if (typeof raw.padding === "number" && Number.isInteger(raw.padding) && raw.padding >= 0 && raw.padding <= MAX_PADDING)
+      padding = raw.padding;
+    else
+      warnings.push(`Ignoring padding ${JSON.stringify(raw.padding)}; it needs a whole number from 0 to ${MAX_PADDING}`);
+  }
+  return { modifier, slotKeys, padding, warnings };
 }
 
 var NARROW_BREAKPOINT = 12;
@@ -1661,8 +1670,10 @@ function BetterTabs() {
     toast(warning, "warning");
   const {
     modifier,
-    slotKeys
+    slotKeys,
+    padding
   } = options;
+  const rowHeight = 1 + padding * 2;
   const [pending, setPending] = createSignal();
   let chordTimer;
   const clearChord = () => {
@@ -1831,7 +1842,7 @@ function BetterTabs() {
     if (group.key === key)
       return false;
     const header = headers.get(group.key);
-    return !!header && !header.isDestroyed && header.screenY < y;
+    return !!header && !header.isDestroyed && header.screenY + (header.height - 1) / 2 < y;
   }).length;
   const dragMove = (event) => {
     const current = drag();
@@ -1878,8 +1889,9 @@ function BetterTabs() {
       var _el$ = _$createElement("box");
       _$use((element) => headers.set(props.group.key, header = element), _el$);
       _$setProp(_el$, "flexDirection", "row");
-      _$setProp(_el$, "height", 1);
+      _$setProp(_el$, "height", rowHeight);
       _$setProp(_el$, "flexShrink", 0);
+      _$setProp(_el$, "paddingTop", padding);
       _$setProp(_el$, "onMouseOver", () => setHovered(id()));
       _$setProp(_el$, "onMouseOut", () => setHovered(undefined));
       _$setProp(_el$, "onMouseDown", (event) => {
@@ -1985,8 +1997,9 @@ function BetterTabs() {
       _$insertNode(_el$1, _el$10);
       _$insertNode(_el$1, _el$11);
       _$setProp(_el$1, "flexDirection", "row");
-      _$setProp(_el$1, "height", 1);
+      _$setProp(_el$1, "height", rowHeight);
       _$setProp(_el$1, "flexShrink", 0);
+      _$setProp(_el$1, "paddingTop", padding);
       _$setProp(_el$1, "onMouseOver", () => setHovered(id()));
       _$setProp(_el$1, "onMouseOut", () => setHovered(undefined));
       _$setProp(_el$1, "onMouseUp", (event) => click(event, () => {
@@ -2146,8 +2159,9 @@ function BetterTabs() {
       var _el$21 = _$createElement("box"), _el$22 = _$createElement("text");
       _$insertNode(_el$21, _el$22);
       _$setProp(_el$21, "flexDirection", "row");
-      _$setProp(_el$21, "height", 1);
+      _$setProp(_el$21, "height", rowHeight);
       _$setProp(_el$21, "flexShrink", 0);
+      _$setProp(_el$21, "paddingTop", padding);
       _$setProp(_el$21, "onMouseOver", () => setHovered("new"));
       _$setProp(_el$21, "onMouseOut", () => setHovered(undefined));
       _$setProp(_el$21, "onMouseUp", (event) => click(event, () => ctx.keymap.dispatch("session.new")));
