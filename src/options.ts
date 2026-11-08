@@ -2,9 +2,11 @@
 export const DEFAULT_KEYS = "123456789cghijklmnopqrstuvwxyz"
 // Many terminals send ctrl+digit as a plain digit, so the modifier defaults to alt.
 export const DEFAULT_MODIFIER = "alt"
+// Closing a tab keeps the session, so asking every time is opt-in.
+export const DEFAULT_CONFIRM_CLOSE = false
 const MODIFIERS = new Set(["alt", "ctrl", "shift", "meta", "super", "hyper"])
 
-export type Options = { modifier: string; slotKeys: string[]; warnings: string[] }
+export type Options = { modifier: string; slotKeys: string[]; confirmClose: boolean; warnings: string[] }
 
 export function readOptions(raw: Record<string, unknown> | undefined): Options {
   const warnings: string[] = []
@@ -20,5 +22,10 @@ export function readOptions(raw: Record<string, unknown> | undefined): Options {
     else warnings.push(`Ignoring keys ${JSON.stringify(raw.keys)}; it needs at least one of a-z or 0-9`)
   }
   const slotKeys = [...new Set(keys.toLowerCase())].filter((key) => /^[a-z0-9]$/.test(key))
-  return { modifier, slotKeys, warnings }
+  let confirmClose = DEFAULT_CONFIRM_CLOSE
+  if (raw?.confirmClose !== undefined) {
+    if (typeof raw.confirmClose === "boolean") confirmClose = raw.confirmClose
+    else warnings.push(`Ignoring confirmClose ${JSON.stringify(raw.confirmClose)}; it needs true or false`)
+  }
+  return { modifier, slotKeys, confirmClose, warnings }
 }
