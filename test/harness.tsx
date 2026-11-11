@@ -109,6 +109,10 @@ export async function startTui(options: {
   writeDelay?: number
   plugin?: typeof sourcePlugin
   options?: Record<string, unknown>
+  theme?: any
+  // Host tab flags by session ID, such as { active: true } or { unread: "error" }.
+  tabState?: Record<string, Record<string, unknown>>
+  size?: { width: number; height: number }
 }) {
   const storage = createStorage(options.stateDir, options.writeDelay ?? 5)
   const server = new Map(options.sessions.map((session) => [session.id, session]))
@@ -132,7 +136,7 @@ export async function startTui(options: {
   const toasts: string[] = []
 
   const ctx: any = {
-    theme,
+    theme: options.theme ?? theme,
     options: options.options ?? {},
     app: { channel: "test" },
     storage,
@@ -164,6 +168,7 @@ export async function startTui(options: {
             active: false,
             busy: false,
             attention: false,
+            ...options.tabState?.[tab.sessionID],
           })),
         open: () => true,
         focus: () => true,
@@ -178,10 +183,11 @@ export async function startTui(options: {
   }
 
   const slot = (options.plugin ?? sourcePlugin).setup(ctx) as unknown as { render: () => any }
+  const { width, height } = options.size ?? { width: 80, height: 30 }
   const setup = await testRender(
     () => (
       <PluginContextProvider value={ctx}>
-        <box flexDirection="row" width={80} height={30}>
+        <box flexDirection="row" width={width} height={height}>
           <box width={40} />
           <box flexDirection="column" flexGrow={1}>
             {slot.render()}
@@ -189,7 +195,7 @@ export async function startTui(options: {
         </box>
       </PluginContextProvider>
     ),
-    { width: 80, height: 30 },
+    { width, height },
   )
 
   const run = (bind: string) => {
@@ -224,6 +230,10 @@ export async function startTui(options: {
     async frame() {
       await setup.renderOnce()
       return setup.captureCharFrame()
+    },
+    async spans() {
+      await setup.renderOnce()
+      return setup.captureSpans()
     },
     async stop() {
       await storage.flush()

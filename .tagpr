@@ -1,0 +1,11 @@
+[tagpr]
+	releaseBranch = main
+	vPrefix = true
+	versionFile = package.json
+	# changelogithub writes the GitHub release from the squash-merged PR titles.
+	changelog = false
+	release = false
+	# The README install snippets pin the tag, so they move with every release.
+	command = sed -i "s/opencode-better-tabs#v[0-9][0-9.]*/opencode-better-tabs#$TAGPR_NEXT_VERSION/g" README.md && git add README.md
+	# The first line becomes the release PR title, so it must stay a Conventional Commit.
+	template = .github/tagpr-template.md

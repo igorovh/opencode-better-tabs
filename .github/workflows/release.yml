@@ -1,0 +1,73 @@
+name: Release
+
+# tagpr keeps a release PR open; merging it tags the version and publishes the GitHub release.
+on:
+  push:
+    branches: [main]
+  # Adding tagpr:minor or tagpr:major to the release PR recomputes its version right away.
+  pull_request:
+    types: [labeled, unlabeled]
+  workflow_dispatch:
+
+concurrency: tagpr
+
+permissions: {}
+
+jobs:
+  tagpr:
+    if: github.event_name != 'pull_request' || startsWith(github.head_ref, 'tagpr-from-')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: read
+    outputs:
+      tag: ${{ steps.tagpr.outputs.tag }}
+      pull_request: ${{ steps.tagpr.outputs.pull_request }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+      - id: tagpr
+        uses: Songmu/tagpr@047aec4b6c0ce166f52958b5a97f5a3d927fd65b # v1.22.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # The release PR comes from GITHUB_TOKEN, which starts no workflows, so run its required checks here.
+  checks:
+    needs: tagpr
+    if: needs.tagpr.outputs.tag == '' && needs.tagpr.outputs.pull_request != ''
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      statuses: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          HEAD_REF: ${{ fromJSON(needs.tagpr.outputs.pull_request).head.ref }}
+          HEAD_SHA: ${{ fromJSON(needs.tagpr.outputs.pull_request).head.sha }}
+        run: |
+          gh workflow run ci.yml --ref "$HEAD_REF"
+          gh api --method POST "repos/$GH_REPO/statuses/$HEAD_SHA" \
+            -f state=success -f context="Validate PR title" \
+            -f description="Release PR title comes from .github/tagpr-template.md"
+
+  # Tags pushed with GITHUB_TOKEN start no workflows either, so the release runs in this one.
+  release:
+    needs: tagpr
+    if: needs.tagpr.outputs.tag != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # changelogithub finds the tag with `git tag --points-at HEAD`.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.tagpr.outputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+      - run: npx changelogithub@15.0.5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

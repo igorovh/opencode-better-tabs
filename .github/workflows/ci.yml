@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The release and issue-to-PR workflows open PRs with GITHUB_TOKEN, which starts no workflows.
+  workflow_dispatch:
 
 jobs:
   check:
