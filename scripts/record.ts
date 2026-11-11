@@ -17,6 +17,7 @@ const { values } = parseArgs({
     width: { type: "string", default: "1280" },
     height: { type: "string", default: "720" },
     sidebar: { type: "boolean", default: false },
+    sessions: { type: "string" },
   },
 })
 
@@ -28,7 +29,9 @@ const STEPS_HELP = `Steps, one per --step or per line of --steps <file>:
   close <text>              hover that row, then click its close cross
   drag <text> -> <text>     drag one row onto another, such as a group header
   key <keys>                press keys, such as alt+2 or ctrl+p
-  type <text>               type text, such as /close (add "key Enter" to run it)`
+  type <text>               type text, such as /close (add "key Enter" to run it)
+  expect <text>             fail unless <text> shows within 5 s, such as a dialog title
+  expect-not <text>         fail unless <text> is gone within 5 s, such as a closed tab`
 
 const opencodeBin = process.env.OPENCODE_BIN ?? "opencode"
 const ttydBin = process.env.TTYD_BIN ?? "ttyd"
@@ -37,13 +40,18 @@ const steps = [...values.step!, ...(values.steps ? readFileSync(values.steps, "u
   .filter((line) => line && !line.startsWith("#"))
 if (!steps.length) console.log(`No steps given, so the GIF shows the bar at rest.\n${STEPS_HELP}`)
 
-const sessions = [
-  { project: "api", title: "Fix the login redirect" },
-  { project: "api", title: "Add rate limiting to uploads" },
-  { project: "web", title: "Dark mode for settings" },
-  { project: "web", title: "Flaky checkout test" },
-  { project: "docs", title: "Write the plugin guide" },
-]
+// --sessions takes a JSON array of { project, title }, to set up what a change needs, such as more groups.
+// Busy and unread tabs need a model run, so show those states with `bun run preview` instead.
+type SampleSession = { project: string; title: string }
+const sessions: SampleSession[] = values.sessions
+  ? JSON.parse(readFileSync(values.sessions, "utf8"))
+  : [
+      { project: "api", title: "Fix the login redirect" },
+      { project: "api", title: "Add rate limiting to uploads" },
+      { project: "web", title: "Dark mode for settings" },
+      { project: "web", title: "Flaky checkout test" },
+      { project: "docs", title: "Write the plugin guide" },
+    ]
 
 const work = mkdtempSync(path.join(os.tmpdir(), "better-tabs-record-"))
 const port = () => 40000 + Math.floor(Math.random() * 20000)
@@ -260,6 +268,18 @@ async function runStep(page: Page, step: string) {
       return page.keyboard.press(arg.split("+").map(keyName).join("+"))
     case "type":
       return page.keyboard.type(arg, { delay: 60 })
+    case "expect":
+    case "expect-not": {
+      const want = verb === "expect"
+      const shown = async () => (await screenLines(page)).some((line) => line.includes(arg))
+      const end = Date.now() + 5000
+      while (Date.now() < end) {
+        if ((await shown()) === want) return
+        await sleep(200)
+      }
+      const screen = (await screenLines(page)).map((line) => line.trimEnd()).join("\n")
+      throw new Error(`Step "${step}" failed: the screen ${want ? "never showed" : "still shows"} "${arg}"\n${screen}`)
+    }
     default:
       throw new Error(`Unknown step "${step}"\n${STEPS_HELP}`)
   }
