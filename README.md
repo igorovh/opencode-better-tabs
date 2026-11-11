@@ -153,6 +153,16 @@ bun test
 The sources are in `src/`, but OpenCode loads `dist/`. Run `bun run compile` after a change and commit `dist/`
 together with the sources; CI fails when they differ.
 
+To preview a UI change, render the tab bar with sample tabs to a PNG:
+
+```sh
+bun run preview -- --out bar.png
+```
+
+Pass plugin options with `--options '{"padding":1}'` and hover a row with `--hover "<row text>"`. When a
+change affects what the bar shows, render it on the base branch and on your branch and post both images as
+"Before" and "After".
+
 To run your checkout instead of the published plugin, put its path in `plugins` and keep the compiler running.
 OpenCode reloads the plugin whenever `dist/` changes.
 
