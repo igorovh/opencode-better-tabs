@@ -44,7 +44,7 @@ if (!steps.length) console.log(`No steps given, so the GIF shows the bar at rest
 // Busy and unread tabs need a model run, so show those states with `bun run preview` instead.
 type SampleSession = { project: string; title: string }
 const sessions: SampleSession[] = values.sessions
-  ? JSON.parse(readFileSync(values.sessions, "utf8"))
+  ? readSessions(values.sessions)
   : [
       { project: "api", title: "Fix the login redirect" },
       { project: "api", title: "Add rate limiting to uploads" },
@@ -270,6 +270,7 @@ async function runStep(page: Page, step: string) {
       return page.keyboard.type(arg, { delay: 60 })
     case "expect":
     case "expect-not": {
+      if (!arg) throw new Error(`Step "${step}" needs text to match`)
       const want = verb === "expect"
       const shown = async () => (await screenLines(page)).some((line) => line.includes(arg))
       const end = Date.now() + 5000
@@ -311,4 +312,12 @@ function keyName(key: string) {
   const lower = key.toLowerCase()
   if (aliases[lower]) return aliases[lower]
   return key.length === 1 ? key : key[0]!.toUpperCase() + key.slice(1)
+}
+
+function readSessions(file: string): SampleSession[] {
+  const list = JSON.parse(readFileSync(file, "utf8"))
+  const valid = (item: any) => typeof item?.project === "string" && item.project && typeof item?.title === "string"
+  if (!Array.isArray(list) || !list.length || !list.every(valid))
+    throw new Error(`${file} must be a non-empty JSON array of { "project": string, "title": string }`)
+  return list
 }
