@@ -59,6 +59,13 @@ const env = {
   OPENCODE_SERVER_PASSWORD: password,
 }
 const children: ChildProcess[] = []
+const output: string[] = []
+const start = (bin: string, args: string[], options: { cwd?: string } = {}) => {
+  const child = spawn(bin, args, { env, ...options, stdio: ["ignore", "ignore", "pipe"] })
+  child.stderr!.on("data", (chunk) => output.push(`${path.basename(bin)}: ${chunk}`))
+  children.push(child)
+  return child
+}
 const stopAll = () => {
   for (const child of children) {
     if (child.exitCode !== null || !child.pid) continue
@@ -75,7 +82,8 @@ async function until<T>(label: string, read: () => Promise<T | undefined>, timeo
     if (value) return value
     await sleep(250)
   }
-  throw new Error(`Timed out waiting for ${label}`)
+  throw new Error(`Timed out waiting for ${label}
+${output.join("").slice(-4000)}`)
 }
 
 try {
@@ -97,8 +105,7 @@ try {
     }),
   )
 
-  const server = spawn(opencodeBin, ["serve", "--port", String(serverPort)], { env, stdio: "ignore" })
-  children.push(server)
+  start(opencodeBin, ["serve", "--port", String(serverPort)])
   const api = `http://127.0.0.1:${serverPort}`
   const auth = { authorization: `Basic ${btoa(`opencode:${password}`)}`, "content-type": "application/json" }
   await until("the OpenCode server", async () => (await fetch(`${api}/api/info`, { headers: auth })).ok || undefined)
@@ -123,12 +130,11 @@ try {
     )
   }
 
-  const ttyd = spawn(
+  start(
     ttydBin,
     ["-p", String(ttydPort), "-W", "-t", "fontSize=15", "-t", "disableLeaveAlert=true", opencodeBin, "--server", api],
-    { env, cwd: path.join(work, "repos", sessions[0]!.project), stdio: "ignore" },
+    { cwd: path.join(work, "repos", sessions[0]!.project) },
   )
-  children.push(ttyd)
   await until("ttyd", async () => (await fetch(`http://127.0.0.1:${ttydPort}`)).ok || undefined)
 
   const width = Number(values.width)
@@ -139,21 +145,25 @@ try {
     recordVideo: { dir: path.join(work, "video"), size: { width, height } },
   })
   const page = await context.newPage()
-  const started = Date.now()
-  await page.goto(`http://127.0.0.1:${ttydPort}`)
-  await until("the tab bar", async () => (await screenLines(page)).some((line) => line.includes("New session")) || undefined)
-  await sleep(1500)
-  const ready = (Date.now() - started) / 1000
-
-  for (const step of steps) {
-    await runStep(page, step)
-    await sleep(700)
+  let ready = 0
+  let crop = ""
+  try {
+    const started = Date.now()
+    await page.goto(`http://127.0.0.1:${ttydPort}`)
+    await until("the tab bar", async () => (await screenLines(page)).some((line) => line.includes("New session")) || undefined)
+    await sleep(1500)
+    ready = (Date.now() - started) / 1000
+    for (const step of steps) {
+      await runStep(page, step)
+      await sleep(700)
+    }
+    await sleep(1500)
+    if (values.sidebar) crop = await sidebarCrop(page)
+  } finally {
+    await context.close()
+    await browser.close()
   }
-  await sleep(1500)
-  const crop = values.sidebar ? await sidebarCrop(page) : ""
   const video = page.video()!
-  await context.close()
-  await browser.close()
 
   const ffmpeg = spawnSync(
     "ffmpeg",
@@ -188,7 +198,12 @@ async function screenLines(page: Page): Promise<string[]> {
 
 async function cellOf(page: Page, text: string, which: "start" | "middle" | "close" = "middle") {
   const lines = await screenLines(page)
-  const row = lines.findIndex((line) => line.includes(text))
+  // Titles also show in the main pane; the tab bar starts at column 0, so take the leftmost match.
+  let row = -1
+  lines.forEach((line, index) => {
+    const at = line.indexOf(text)
+    if (at !== -1 && (row === -1 || at < lines[row]!.indexOf(text))) row = index
+  })
   if (row === -1) throw new Error(`No row shows "${text}"`)
   const line = lines[row]!
   let col = line.indexOf(text) + (which === "middle" ? Math.floor(text.length / 2) : 0)
@@ -242,7 +257,7 @@ async function runStep(page: Page, step: string) {
       return page.mouse.up()
     }
     case "key":
-      return page.keyboard.press(arg.split("+").map((key) => (key.length === 1 ? key : key[0]!.toUpperCase() + key.slice(1))).join("+"))
+      return page.keyboard.press(arg.split("+").map(keyName).join("+"))
     case "type":
       return page.keyboard.type(arg, { delay: 60 })
     default:
@@ -253,12 +268,27 @@ async function runStep(page: Page, step: string) {
 // Crops the video to the tab bar, which ends a little after the group shortcuts on the right.
 async function sidebarCrop(page: Page) {
   const lines = await screenLines(page)
-  const end = Math.max(...lines.map((line) => line.search(/alt\+\d/)).map((at) => (at === -1 ? -1 : at + 5)))
-  if (end <= 0) return ""
+  const modifier = (JSON.parse(values.options!).modifier ?? "alt").toLowerCase()
+  const hint = new RegExp(`${modifier.replaceAll("+", "\\+")}\\+[a-z0-9]`, "i")
+  // Only group headers: the main pane's footer shows shortcuts such as ctrl+p too.
+  const headers = lines.filter((line) => /^\s*[▾▸]/.test(line))
+  const end = Math.max(-1, ...headers.map((line) => line.search(hint)).map((at) => (at === -1 ? -1 : at + modifier.length + 2)))
+  if (end <= 0) {
+    console.warn("No group shortcut found in the tab bar, so the GIF is not cropped")
+    return ""
+  }
   const width = await page.evaluate((cols) => {
     const term = (window as any).term
     const rect = document.querySelector(".xterm-screen")!.getBoundingClientRect()
     return Math.round(rect.left + ((cols + 3) * rect.width) / term.cols)
   }, end)
   return `crop=${width - (width % 2)}:ih:0:0,`
+}
+
+// Playwright names modifiers Control, Alt, Shift and Meta, and keys like Enter and Escape.
+function keyName(key: string) {
+  const aliases: Record<string, string> = { ctrl: "Control", control: "Control", cmd: "Meta", command: "Meta", meta: "Meta", option: "Alt", opt: "Alt", esc: "Escape" }
+  const lower = key.toLowerCase()
+  if (aliases[lower]) return aliases[lower]
+  return key.length === 1 ? key : key[0]!.toUpperCase() + key.slice(1)
 }
