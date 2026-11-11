@@ -1,0 +1,27 @@
+# tidy (https://github.com/igorovh/tidy) triages issues, proposes fixes and reviews pull requests here.
+review:
+  # Run on the pull request's code in a container without secrets; the reviewer reads the output.
+  checks: ["bun install --frozen-lockfile", "bun run typecheck", "bun run compile", "bun test"]
+
+  # A GIF of the real OpenCode TUI, before and after the change, attached to the review.
+  extras:
+    - name: Demo
+      when: ["src/**"]
+      instructions: >-
+        Record the behaviour this pull request changes in the real OpenCode TUI. Give one --step per
+        action, using the step list under "Demo recordings" in AGENTS.md, and put expect or expect-not
+        steps after actions so the recording fails when the behaviour is wrong. Add --sidebar to crop to
+        the tab bar. Use --options and --sessions when the change needs plugin options or other tabs.
+      image: node:22-bookworm
+      setup: |
+        apt-get update -qq && apt-get install -y -qq ffmpeg jq > /dev/null
+        curl -fsSL -o /usr/local/bin/ttyd https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64
+        echo "8a217c968aba172e0dbf3f34447218dc015bc4d5e59bf51db2f2cd12b7be4f55  /usr/local/bin/ttyd" | sha256sum --check --quiet
+        chmod +x /usr/local/bin/ttyd
+        npm install --global --loglevel=error bun "@opencode/cli@$(jq -r '.devDependencies["@opencode/plugin"]' package.json)" > /dev/null
+        bun install --frozen-lockfile > /dev/null
+        bunx playwright install --with-deps chromium > /dev/null
+      command: ["bun", "run", "record", "--", "--out", "{out}/demo.gif"]
+
+# Uses DIST_DEPLOY_KEY only on renovate/ branches, never on tidy's.
+safe_workflows: [renovate-dist.yml]
