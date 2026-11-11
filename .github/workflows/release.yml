@@ -47,8 +47,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           HEAD_REF: ${{ fromJSON(needs.tagpr.outputs.pull_request).head.ref }}
-          HEAD_SHA: ${{ fromJSON(needs.tagpr.outputs.pull_request).head.sha }}
         run: |
+          # tagpr's output holds the head from before it pushed, so read the branch itself.
+          HEAD_SHA=$(gh api "repos/$GH_REPO/git/ref/heads/$HEAD_REF" --jq .object.sha)
           gh workflow run ci.yml --ref "$HEAD_REF"
           gh api --method POST "repos/$GH_REPO/statuses/$HEAD_SHA" \
             -f state=success -f context="Validate PR title" \
