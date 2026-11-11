@@ -105,6 +105,8 @@ Add an entry to `cli.json` whose `package` is exactly the same string as in `ope
 - `modifier`: modifier for the shortcuts, such as `alt`, `ctrl` or `ctrl+shift`. The default is `alt` because many
   terminals send `ctrl+1` as a plain `1`. An invalid value shows a warning and falls back to `alt`.
 - `keys`: the key pool, in order. Only `a`–`z` and `0`–`9` are used.
+- `confirmClose`: ask before closing a tab with the `✕` or a middle click. Default `false`, so the tab closes at
+  once. The `/close` and `/archive` commands never ask: they are explicit.
 
 To change or turn off a command shortcut, set its command ID under `keybinds` in the same `cli.json`. Use `"none"`
 to turn it off:

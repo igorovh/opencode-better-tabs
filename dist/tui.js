@@ -1415,6 +1415,7 @@ function writeTabsMode(mode) {
 
 var DEFAULT_KEYS = "123456789cghijklmnopqrstuvwxyz";
 var DEFAULT_MODIFIER = "alt";
+var DEFAULT_CONFIRM_CLOSE = false;
 var MODIFIERS = new Set(["alt", "ctrl", "shift", "meta", "super", "hyper"]);
 function readOptions(raw) {
   const warnings = [];
@@ -1434,7 +1435,14 @@ function readOptions(raw) {
       warnings.push(`Ignoring keys ${JSON.stringify(raw.keys)}; it needs at least one of a-z or 0-9`);
   }
   const slotKeys = [...new Set(keys.toLowerCase())].filter((key) => /^[a-z0-9]$/.test(key));
-  return { modifier, slotKeys, warnings };
+  let confirmClose = DEFAULT_CONFIRM_CLOSE;
+  if (raw?.confirmClose !== undefined) {
+    if (typeof raw.confirmClose === "boolean")
+      confirmClose = raw.confirmClose;
+    else
+      warnings.push(`Ignoring confirmClose ${JSON.stringify(raw.confirmClose)}; it needs true or false`);
+  }
+  return { modifier, slotKeys, confirmClose, warnings };
 }
 
 var NARROW_BREAKPOINT = 12;
@@ -1661,7 +1669,8 @@ function BetterTabs() {
     toast(warning, "warning");
   const {
     modifier,
-    slotKeys
+    slotKeys,
+    confirmClose
   } = options;
   const [pending, setPending] = createSignal();
   let chordTimer;
@@ -1991,7 +2000,7 @@ function BetterTabs() {
       _$setProp(_el$1, "onMouseOut", () => setHovered(undefined));
       _$setProp(_el$1, "onMouseUp", (event) => click(event, () => {
         if (event.button === 1)
-          ctx.ui.tabs.close(props.tab.sessionID);
+          requestClose(props.tab.sessionID).catch(fail);
         else if (event.button === 0)
           focus(props.tab.sessionID);
       }));
@@ -2051,7 +2060,7 @@ function BetterTabs() {
             _$setProp(_el$17, "onMouseOut", () => setCloseHovered(false));
             _$setProp(_el$17, "onMouseUp", (event) => click(event, () => {
               if (event.button === 0 && hovered() === id())
-                ctx.ui.tabs.close(props.tab.sessionID);
+                requestClose(props.tab.sessionID).catch(fail);
             }));
             _$setProp(_el$18, "selectable", false);
             _$insert(_el$18, () => hovered() === id() ? "\u2715 " : "  ");
@@ -2183,6 +2192,22 @@ function BetterTabs() {
   const closeCurrent = () => {
     if (!ctx.ui.tabs.close())
       toast("No tab is open", "warning");
+  };
+  const requestClose = async (sessionID) => {
+    if (confirmClose) {
+      const tab = tabs().find((item) => item.sessionID === sessionID);
+      const answer = await ctx.ui.dialog.confirm({
+        title: "Close tab",
+        message: tab ? `Close \u201C${titleOf(tab)}\u201D? The session is kept and can be reopened.` : "Close this tab?",
+        label: {
+          confirm: "Close",
+          cancel: "Cancel"
+        }
+      });
+      if (!answer)
+        return;
+    }
+    ctx.ui.tabs.close(sessionID);
   };
   const setAllCollapsed = (collapsed) => void update((draft) => {
     draft.collapsed = {};

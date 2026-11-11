@@ -151,7 +151,10 @@ export async function startTui(options: {
     ui: {
       toast: { show: (toast: { message: string }) => void toasts.push(toast.message) },
       router: { navigate: () => {} },
-      dialog: { select: async () => undefined },
+      dialog: {
+        confirm: async () => true,
+        select: async () => undefined,
+      },
       slot: (slot: { render: () => any }) => slot,
       tabs: {
         enabled: () => true,
@@ -199,10 +202,20 @@ export async function startTui(options: {
     throw new Error(`No command bound to ${bind}`)
   }
 
+  const command = (id: string) => {
+    for (const factory of layers.toReversed()) {
+      const layer = factory()
+      const found = layer.commands.find((item: any) => item.id === id)
+      if (found) return found.run()
+    }
+    throw new Error(`No command ${id}`)
+  }
+
   return {
     ctx,
     toasts,
     run,
+    command,
     hostOrder: () => host.global.tabs.map((tab: { sessionID: string }) => tab.sessionID),
     openTabs: (ids: string[]) =>
       updateHost((draft) => void (draft.global.tabs = ids.map((sessionID) => ({ sessionID })))),
