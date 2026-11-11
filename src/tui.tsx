@@ -498,7 +498,7 @@ function BetterTabs() {
         onMouseOut={() => setHovered(undefined)}
         onMouseUp={(event: MouseEvent) =>
           click(event, () => {
-            if (event.button === 1) void requestClose(props.tab.sessionID)
+            if (event.button === 1) void requestClose(props.tab.sessionID).catch(fail)
             else if (event.button === 0) focus(props.tab.sessionID)
           })
         }
@@ -529,7 +529,7 @@ function BetterTabs() {
             onMouseOut={() => setCloseHovered(false)}
             onMouseUp={(event: MouseEvent) =>
               click(event, () => {
-                if (event.button === 0 && hovered() === id()) void requestClose(props.tab.sessionID)
+                if (event.button === 0 && hovered() === id()) void requestClose(props.tab.sessionID).catch(fail)
               })
             }
           >
@@ -612,15 +612,13 @@ function BetterTabs() {
     if (!ctx.ui.tabs.close()) toast("No tab is open", "warning")
   }
 
-  // The cross and a middle click close a tab with a single click, so ask first when the option is
-  // on. The commands stay immediate: typing /close is already deliberate. Either way the session
-  // is kept, which is what the dialog promises.
+  // Single-click closes are easy to trigger by accident; commands stay immediate.
   const requestClose = async (sessionID: string) => {
     if (confirmClose) {
       const tab = tabs().find((item) => item.sessionID === sessionID)
       const answer = await ctx.ui.dialog.confirm({
-        title: "Close session",
-        message: tab ? `Close “${titleOf(tab)}”? The session is kept and can be reopened.` : "Close this session?",
+        title: "Close tab",
+        message: tab ? `Close “${titleOf(tab)}”? The session is kept and can be reopened.` : "Close this tab?",
         label: { confirm: "Close", cancel: "Cancel" },
       })
       if (!answer) return

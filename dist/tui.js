@@ -2000,7 +2000,7 @@ function BetterTabs() {
       _$setProp(_el$1, "onMouseOut", () => setHovered(undefined));
       _$setProp(_el$1, "onMouseUp", (event) => click(event, () => {
         if (event.button === 1)
-          requestClose(props.tab.sessionID);
+          requestClose(props.tab.sessionID).catch(fail);
         else if (event.button === 0)
           focus(props.tab.sessionID);
       }));
@@ -2060,7 +2060,7 @@ function BetterTabs() {
             _$setProp(_el$17, "onMouseOut", () => setCloseHovered(false));
             _$setProp(_el$17, "onMouseUp", (event) => click(event, () => {
               if (event.button === 0 && hovered() === id())
-                requestClose(props.tab.sessionID);
+                requestClose(props.tab.sessionID).catch(fail);
             }));
             _$setProp(_el$18, "selectable", false);
             _$insert(_el$18, () => hovered() === id() ? "\u2715 " : "  ");
@@ -2197,8 +2197,8 @@ function BetterTabs() {
     if (confirmClose) {
       const tab = tabs().find((item) => item.sessionID === sessionID);
       const answer = await ctx.ui.dialog.confirm({
-        title: "Close session",
-        message: tab ? `Close \u201C${titleOf(tab)}\u201D? The session is kept and can be reopened.` : "Close this session?",
+        title: "Close tab",
+        message: tab ? `Close \u201C${titleOf(tab)}\u201D? The session is kept and can be reopened.` : "Close this tab?",
         label: {
           confirm: "Close",
           cancel: "Cancel"

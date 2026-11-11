@@ -88,7 +88,7 @@ for (const [name, plugin] of [
       await clickCross(tui, rowOf(frame, "alpha 1"))
 
       expect(spyState.asked).toHaveLength(1)
-      expect(spyState.asked[0]!.title).toBe("Close session")
+      expect(spyState.asked[0]!.title).toBe("Close tab")
       expect(spyState.asked[0]!.message).toContain("alpha 1")
       expect(spyState.asked[0]!.label).toEqual({ confirm: "Close", cancel: "Cancel" })
       expect(spyState.closed).toEqual(["alpha1"])
@@ -123,9 +123,10 @@ for (const [name, plugin] of [
       const spyState = spy(tui)
 
       await tui.command("better-tabs.close")
+      await tui.command("better-tabs.archive")
 
       expect(spyState.asked).toEqual([])
-      expect(spyState.closed).toEqual(["active"])
+      expect(spyState.closed).toEqual(["active", "active"])
     })
   })
 }
