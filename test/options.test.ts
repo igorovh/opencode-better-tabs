@@ -1,11 +1,12 @@
 import { expect, test } from "bun:test"
-import { DEFAULT_CONFIRM_CLOSE, DEFAULT_KEYS, readOptions } from "../src/options"
+import { DEFAULT_CONFIRM_CLOSE, DEFAULT_KEYS, DEFAULT_PADDING, readOptions } from "../src/options"
 
-test("defaults to alt, the built-in key pool and no close confirmation", () => {
+test("defaults to alt, the built-in key pool, no close confirmation and unpadded rows", () => {
   expect(readOptions({})).toEqual({
     modifier: "alt",
     slotKeys: [...DEFAULT_KEYS],
     confirmClose: DEFAULT_CONFIRM_CLOSE,
+    padding: DEFAULT_PADDING,
     warnings: [],
   })
 })
@@ -30,6 +31,16 @@ test("reads confirmClose and rejects values that are not booleans", () => {
   for (const confirmClose of ["true", 1, null]) {
     const options = readOptions({ confirmClose })
     expect(options.confirmClose).toBe(DEFAULT_CONFIRM_CLOSE)
+    expect(options.warnings).toHaveLength(1)
+  }
+})
+
+test("reads padding and rejects values that are not a whole number in range", () => {
+  expect(readOptions({ padding: 2 }).padding).toBe(2)
+  expect(readOptions({ padding: 0 }).warnings).toEqual([])
+  for (const padding of ["1", 1.5, -1, 4, null]) {
+    const options = readOptions({ padding })
+    expect(options.padding).toBe(DEFAULT_PADDING)
     expect(options.warnings).toHaveLength(1)
   }
 })
