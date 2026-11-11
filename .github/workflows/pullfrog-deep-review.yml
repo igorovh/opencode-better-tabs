@@ -35,7 +35,7 @@ jobs:
           persist-credentials: false
       # Bun for the checks, plus OpenCode, ttyd, ffmpeg and Chromium for `bun run record`.
       - uses: ./.github/actions/setup-record
-      - uses: pullfrog/pullfrog@88bcc3d4bb26951b99fafe09f65d90d20d5b6d62 # v0.1.126
+      - uses: pullfrog/pullfrog@0741f79ecebfa4469a010644d2aed2d96d32d489 # v0.1.127
         with:
           prompt: >-
             Review pull request #${{ env.PR }} in depth, following the review instructions.
