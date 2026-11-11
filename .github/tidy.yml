@@ -1,0 +1,7 @@
+# tidy (https://github.com/igorovh/tidy) triages issues, proposes fixes and reviews pull requests here.
+review:
+  # Run on the pull request's code in a container without secrets; the reviewer reads the output.
+  checks: ["bun install --frozen-lockfile", "bun run typecheck", "bun run compile", "bun test"]
+
+# Uses DIST_DEPLOY_KEY only on renovate/ branches, never on tidy's.
+safe_workflows: [renovate-dist.yml]
