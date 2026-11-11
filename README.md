@@ -105,6 +105,8 @@ Add an entry to `cli.json` whose `package` is exactly the same string as in `ope
 - `modifier`: modifier for the shortcuts, such as `alt`, `ctrl` or `ctrl+shift`. The default is `alt` because many
   terminals send `ctrl+1` as a plain `1`. An invalid value shows a warning and falls back to `alt`.
 - `keys`: the key pool, in order. Only `a`–`z` and `0`–`9` are used.
+- `confirmClose`: ask before closing a tab with the `✕` or a middle click. Default `false`, so the tab closes at
+  once. The `/close` and `/archive` commands never ask: they are explicit.
 - `padding`: blank lines above and below the label of every row (tab, group header and `+ New session`), from `0`
   to `3`. Default `0`, so rows stay one line tall. Set it to `1` to give the hover and active backgrounds some
   air: the row grows to `1 + padding × 2` lines. Terminal rows are one cell tall, so a gap is a whole blank line.

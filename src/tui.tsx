@@ -227,11 +227,9 @@ function BetterTabs() {
   // Two-step shortcuts: alt+G picks group G, then alt+T opens tab T of that group ----------------
   const options = readOptions(ctx.options)
   for (const warning of options.warnings) toast(warning, "warning")
-  const { modifier, slotKeys, padding } = options
+  const { modifier, slotKeys, confirmClose, padding } = options
 
-  // A row is one line of text, padded with blank lines above and below it so the hover and active
-  // backgrounds get some air around the label. Terminal rows are one cell tall, so a gap is a
-  // whole blank line.
+  // Terminal rows are one cell tall, so padding adds whole blank lines around the label.
   const rowHeight = 1 + padding * 2
 
   // The selected group is tracked by key: saving a new order is async, so positions lag behind.
@@ -506,7 +504,7 @@ function BetterTabs() {
         onMouseOut={() => setHovered(undefined)}
         onMouseUp={(event: MouseEvent) =>
           click(event, () => {
-            if (event.button === 1) ctx.ui.tabs.close(props.tab.sessionID)
+            if (event.button === 1) void requestClose(props.tab.sessionID).catch(fail)
             else if (event.button === 0) focus(props.tab.sessionID)
           })
         }
@@ -537,7 +535,7 @@ function BetterTabs() {
             onMouseOut={() => setCloseHovered(false)}
             onMouseUp={(event: MouseEvent) =>
               click(event, () => {
-                if (event.button === 0 && hovered() === id()) ctx.ui.tabs.close(props.tab.sessionID)
+                if (event.button === 0 && hovered() === id()) void requestClose(props.tab.sessionID).catch(fail)
               })
             }
           >
@@ -619,6 +617,20 @@ function BetterTabs() {
 
   const closeCurrent = () => {
     if (!ctx.ui.tabs.close()) toast("No tab is open", "warning")
+  }
+
+  // Single-click closes are easy to trigger by accident; commands stay immediate.
+  const requestClose = async (sessionID: string) => {
+    if (confirmClose) {
+      const tab = tabs().find((item) => item.sessionID === sessionID)
+      const answer = await ctx.ui.dialog.confirm({
+        title: "Close tab",
+        message: tab ? `Close “${titleOf(tab)}”? The session is kept and can be reopened.` : "Close this tab?",
+        label: { confirm: "Close", cancel: "Cancel" },
+      })
+      if (!answer) return
+    }
+    ctx.ui.tabs.close(sessionID)
   }
 
   const setAllCollapsed = (collapsed: boolean) =>
