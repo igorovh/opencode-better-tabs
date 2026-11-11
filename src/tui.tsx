@@ -419,8 +419,18 @@ function BetterTabs() {
     const keysWidth = () => (keys() ? keys().length + 2 : 0)
     const counts = createMemo(() => groupCounts(props.group, innerWidth() - 3 - MIN_GROUP_NAME - keysWidth()))
     const countsWidth = () => counts().reduce((width, item) => width + item.text.length + 1, 0)
-    const nameWidth = () => innerWidth() - 3 - countsWidth() - keysWidth()
+    const countText = () => ` (${props.group.tabs.length})`
+    const baseNameWidth = () => innerWidth() - 3 - countsWidth() - keysWidth()
+    // A collapsed group shows its tab count; when space runs out the count goes before the name is cut.
+    const showCount = () => props.collapsed && props.group.name.length + countText().length <= baseNameWidth()
+    const nameWidth = () => baseNameWidth() - (showCount() ? countText().length : 0)
     const marker = () => groupStatus(props.group)
+    const narrowText = () => {
+      const available = innerWidth() - (marker() ? 1 : 0)
+      const full = arrow() + props.group.name + (props.collapsed ? countText() : "")
+      if (full.length <= available) return full
+      return truncate(arrow() + props.group.name, available)
+    }
     const noGitLabel = () => (props.group.noGit && nameWidth() - props.group.name.length >= 7 ? " no git" : "")
     let header: BoxRenderable | undefined
     onCleanup(() => {
@@ -459,7 +469,7 @@ function BetterTabs() {
           fallback={
             <>
               <text selectable={false} fg={theme().hue.accent[200]}>
-                {truncate(arrow() + props.group.name, innerWidth() - (marker() ? 1 : 0))}
+                {narrowText()}
               </text>
               <box flexGrow={1} />
               <text selectable={false} fg={marker()?.color}>{marker()?.char ?? ""}</text>
@@ -470,6 +480,9 @@ function BetterTabs() {
           <text selectable={false} fg={dragging() ? theme().text.base : theme().hue.accent[200]}>
             {truncate(props.group.name, nameWidth())}
           </text>
+          <Show when={showCount()}>
+            <text selectable={false} fg={theme().text.muted}>{countText()}</text>
+          </Show>
           <text selectable={false} fg={theme().text.muted}>{noGitLabel()}</text>
           <box flexGrow={1} />
           <For each={counts()}>{(item) => <text selectable={false} fg={item.color}>{item.text + " "}</text>}</For>

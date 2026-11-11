@@ -1886,8 +1886,18 @@ function BetterTabs() {
     const keysWidth = () => keys() ? keys().length + 2 : 0;
     const counts = createMemo(() => groupCounts(props.group, innerWidth() - 3 - MIN_GROUP_NAME - keysWidth()));
     const countsWidth = () => counts().reduce((width, item) => width + item.text.length + 1, 0);
-    const nameWidth = () => innerWidth() - 3 - countsWidth() - keysWidth();
+    const countText = () => ` (${props.group.tabs.length})`;
+    const baseNameWidth = () => innerWidth() - 3 - countsWidth() - keysWidth();
+    const showCount = () => props.collapsed && props.group.name.length + countText().length <= baseNameWidth();
+    const nameWidth = () => baseNameWidth() - (showCount() ? countText().length : 0);
     const marker = () => groupStatus(props.group);
+    const narrowText = () => {
+      const available = innerWidth() - (marker() ? 1 : 0);
+      const full = arrow() + props.group.name + (props.collapsed ? countText() : "");
+      if (full.length <= available)
+        return full;
+      return truncate(arrow() + props.group.name, available);
+    };
     const noGitLabel = () => props.group.noGit && nameWidth() - props.group.name.length >= 7 ? " no git" : "";
     let header;
     onCleanup(() => {
@@ -1924,21 +1934,21 @@ function BetterTabs() {
         },
         get fallback() {
           return [(() => {
-            var _el$7 = _$createElement("text");
-            _$setProp(_el$7, "selectable", false);
-            _$insert(_el$7, () => truncate(arrow() + props.group.name, innerWidth() - (marker() ? 1 : 0)));
-            _$effect((_$p) => _$setProp(_el$7, "fg", theme().hue.accent[200], _$p));
-            return _el$7;
-          })(), (() => {
-            var _el$8 = _$createElement("box");
-            _$setProp(_el$8, "flexGrow", 1);
+            var _el$8 = _$createElement("text");
+            _$setProp(_el$8, "selectable", false);
+            _$insert(_el$8, narrowText);
+            _$effect((_$p) => _$setProp(_el$8, "fg", theme().hue.accent[200], _$p));
             return _el$8;
           })(), (() => {
-            var _el$9 = _$createElement("text");
-            _$setProp(_el$9, "selectable", false);
-            _$insert(_el$9, () => marker()?.char ?? "");
-            _$effect((_$p) => _$setProp(_el$9, "fg", marker()?.color, _$p));
+            var _el$9 = _$createElement("box");
+            _$setProp(_el$9, "flexGrow", 1);
             return _el$9;
+          })(), (() => {
+            var _el$0 = _$createElement("text");
+            _$setProp(_el$0, "selectable", false);
+            _$insert(_el$0, () => marker()?.char ?? "");
+            _$effect((_$p) => _$setProp(_el$0, "fg", marker()?.color, _$p));
+            return _el$0;
           })()];
         },
         get children() {
@@ -1954,37 +1964,48 @@ function BetterTabs() {
             _$insert(_el$3, () => truncate(props.group.name, nameWidth()));
             _$effect((_$p) => _$setProp(_el$3, "fg", dragging() ? theme().text.base : theme().hue.accent[200], _$p));
             return _el$3;
-          })(), (() => {
-            var _el$4 = _$createElement("text");
-            _$setProp(_el$4, "selectable", false);
-            _$insert(_el$4, noGitLabel);
-            _$effect((_$p) => _$setProp(_el$4, "fg", theme().text.muted, _$p));
-            return _el$4;
-          })(), (() => {
-            var _el$5 = _$createElement("box");
-            _$setProp(_el$5, "flexGrow", 1);
+          })(), _$createComponent(Show, {
+            get when() {
+              return showCount();
+            },
+            get children() {
+              var _el$4 = _$createElement("text");
+              _$setProp(_el$4, "selectable", false);
+              _$insert(_el$4, countText);
+              _$effect((_$p) => _$setProp(_el$4, "fg", theme().text.muted, _$p));
+              return _el$4;
+            }
+          }), (() => {
+            var _el$5 = _$createElement("text");
+            _$setProp(_el$5, "selectable", false);
+            _$insert(_el$5, noGitLabel);
+            _$effect((_$p) => _$setProp(_el$5, "fg", theme().text.muted, _$p));
             return _el$5;
+          })(), (() => {
+            var _el$6 = _$createElement("box");
+            _$setProp(_el$6, "flexGrow", 1);
+            return _el$6;
           })(), _$createComponent(For, {
             get each() {
               return counts();
             },
             children: (item) => (() => {
-              var _el$0 = _$createElement("text");
-              _$setProp(_el$0, "selectable", false);
-              _$insert(_el$0, () => item.text + " ");
-              _$effect((_$p) => _$setProp(_el$0, "fg", item.color, _$p));
-              return _el$0;
+              var _el$1 = _$createElement("text");
+              _$setProp(_el$1, "selectable", false);
+              _$insert(_el$1, () => item.text + " ");
+              _$effect((_$p) => _$setProp(_el$1, "fg", item.color, _$p));
+              return _el$1;
             })()
           }), _$createComponent(Show, {
             get when() {
               return keys();
             },
             get children() {
-              var _el$6 = _$createElement("text");
-              _$setProp(_el$6, "selectable", false);
-              _$insert(_el$6, () => keys() + " ");
-              _$effect((_$p) => _$setProp(_el$6, "fg", dragging() ? theme().text.base : selected() ? theme().hue.accent[200] : theme().text.muted, _$p));
-              return _el$6;
+              var _el$7 = _$createElement("text");
+              _$setProp(_el$7, "selectable", false);
+              _$insert(_el$7, () => keys() + " ");
+              _$effect((_$p) => _$setProp(_el$7, "fg", dragging() ? theme().text.base : selected() ? theme().hue.accent[200] : theme().text.muted, _$p));
+              return _el$7;
             }
           })];
         }
@@ -2002,98 +2023,98 @@ function BetterTabs() {
     const titleWidth = () => innerWidth() - 5 - (showKeys() ? keys().length + 2 : 0);
     const [closeHovered, setCloseHovered] = createSignal(false);
     return (() => {
-      var _el$1 = _$createElement("box"), _el$10 = _$createElement("text"), _el$11 = _$createElement("text");
-      _$insertNode(_el$1, _el$10);
-      _$insertNode(_el$1, _el$11);
-      _$setProp(_el$1, "flexDirection", "row");
-      _$setProp(_el$1, "height", rowHeight);
-      _$setProp(_el$1, "flexShrink", 0);
-      _$setProp(_el$1, "paddingTop", padding);
-      _$setProp(_el$1, "onMouseOver", () => setHovered(id()));
-      _$setProp(_el$1, "onMouseOut", () => setHovered(undefined));
-      _$setProp(_el$1, "onMouseUp", (event) => click(event, () => {
+      var _el$10 = _$createElement("box"), _el$11 = _$createElement("text"), _el$12 = _$createElement("text");
+      _$insertNode(_el$10, _el$11);
+      _$insertNode(_el$10, _el$12);
+      _$setProp(_el$10, "flexDirection", "row");
+      _$setProp(_el$10, "height", rowHeight);
+      _$setProp(_el$10, "flexShrink", 0);
+      _$setProp(_el$10, "paddingTop", padding);
+      _$setProp(_el$10, "onMouseOver", () => setHovered(id()));
+      _$setProp(_el$10, "onMouseOut", () => setHovered(undefined));
+      _$setProp(_el$10, "onMouseUp", (event) => click(event, () => {
         if (event.button === 1)
           requestClose(props.tab.sessionID).catch(fail);
         else if (event.button === 0)
           focus(props.tab.sessionID);
       }));
-      _$setProp(_el$10, "selectable", false);
-      _$insert(_el$10, () => props.tab.active ? "\u258C" : " ");
       _$setProp(_el$11, "selectable", false);
-      _$insert(_el$11, () => status(props.tab).char);
-      _$insert(_el$1, _$createComponent(Show, {
+      _$insert(_el$11, () => props.tab.active ? "\u258C" : " ");
+      _$setProp(_el$12, "selectable", false);
+      _$insert(_el$12, () => status(props.tab).char);
+      _$insert(_el$10, _$createComponent(Show, {
         get when() {
           return !narrow();
         },
         get fallback() {
           return (() => {
-            var _el$19 = _$createElement("text");
-            _$setProp(_el$19, "selectable", false);
-            _$insert(_el$19, (() => {
+            var _el$20 = _$createElement("text");
+            _$setProp(_el$20, "selectable", false);
+            _$insert(_el$20, (() => {
               var _c$ = _$memo(() => !!armed());
               return () => _c$() ? slotKeys[props.position] ?? "" : "";
             })());
-            _$effect((_$p) => _$setProp(_el$19, "fg", theme().hue.accent[200], _$p));
-            return _el$19;
+            _$effect((_$p) => _$setProp(_el$20, "fg", theme().hue.accent[200], _$p));
+            return _el$20;
           })();
         },
         get children() {
           return [(() => {
-            var _el$12 = _$createElement("text");
-            _$insertNode(_el$12, _$createTextNode(` `));
-            _$setProp(_el$12, "selectable", false);
-            return _el$12;
+            var _el$13 = _$createElement("text");
+            _$insertNode(_el$13, _$createTextNode(` `));
+            _$setProp(_el$13, "selectable", false);
+            return _el$13;
           })(), (() => {
-            var _el$14 = _$createElement("text");
-            _$setProp(_el$14, "selectable", false);
-            _$insert(_el$14, () => truncate(titleOf(props.tab), titleWidth()));
-            _$effect((_$p) => _$setProp(_el$14, "fg", titleColor(), _$p));
-            return _el$14;
-          })(), (() => {
-            var _el$15 = _$createElement("box");
-            _$setProp(_el$15, "flexGrow", 1);
+            var _el$15 = _$createElement("text");
+            _$setProp(_el$15, "selectable", false);
+            _$insert(_el$15, () => truncate(titleOf(props.tab), titleWidth()));
+            _$effect((_$p) => _$setProp(_el$15, "fg", titleColor(), _$p));
             return _el$15;
+          })(), (() => {
+            var _el$16 = _$createElement("box");
+            _$setProp(_el$16, "flexGrow", 1);
+            return _el$16;
           })(), _$createComponent(Show, {
             get when() {
               return showKeys();
             },
             get children() {
-              var _el$16 = _$createElement("text");
-              _$setProp(_el$16, "selectable", false);
-              _$insert(_el$16, () => keys() + " ");
-              _$effect((_$p) => _$setProp(_el$16, "fg", armed() ? theme().hue.accent[200] : theme().text.muted, _$p));
-              return _el$16;
+              var _el$17 = _$createElement("text");
+              _$setProp(_el$17, "selectable", false);
+              _$insert(_el$17, () => keys() + " ");
+              _$effect((_$p) => _$setProp(_el$17, "fg", armed() ? theme().hue.accent[200] : theme().text.muted, _$p));
+              return _el$17;
             }
           }), (() => {
-            var _el$17 = _$createElement("box"), _el$18 = _$createElement("text");
-            _$insertNode(_el$17, _el$18);
-            _$setProp(_el$17, "width", 2);
-            _$setProp(_el$17, "flexShrink", 0);
-            _$setProp(_el$17, "onMouseOver", () => setCloseHovered(true));
-            _$setProp(_el$17, "onMouseOut", () => setCloseHovered(false));
-            _$setProp(_el$17, "onMouseUp", (event) => click(event, () => {
+            var _el$18 = _$createElement("box"), _el$19 = _$createElement("text");
+            _$insertNode(_el$18, _el$19);
+            _$setProp(_el$18, "width", 2);
+            _$setProp(_el$18, "flexShrink", 0);
+            _$setProp(_el$18, "onMouseOver", () => setCloseHovered(true));
+            _$setProp(_el$18, "onMouseOut", () => setCloseHovered(false));
+            _$setProp(_el$18, "onMouseUp", (event) => click(event, () => {
               if (event.button === 0 && hovered() === id())
                 requestClose(props.tab.sessionID).catch(fail);
             }));
-            _$setProp(_el$18, "selectable", false);
-            _$insert(_el$18, () => hovered() === id() ? "\u2715 " : "  ");
-            _$effect((_$p) => _$setProp(_el$18, "fg", closeHovered() ? theme().text.feedback.error.base : theme().text.muted, _$p));
-            return _el$17;
+            _$setProp(_el$19, "selectable", false);
+            _$insert(_el$19, () => hovered() === id() ? "\u2715 " : "  ");
+            _$effect((_$p) => _$setProp(_el$19, "fg", closeHovered() ? theme().text.feedback.error.base : theme().text.muted, _$p));
+            return _el$18;
           })()];
         }
       }), null);
       _$effect((_p$) => {
         var _v$ = dragged() ? theme().background.raised.high : rowBackground(id(), props.tab.active), _v$2 = theme().hue.accent[300], _v$3 = status(props.tab).color;
-        _v$ !== _p$.e && (_p$.e = _$setProp(_el$1, "backgroundColor", _v$, _p$.e));
-        _v$2 !== _p$.t && (_p$.t = _$setProp(_el$10, "fg", _v$2, _p$.t));
-        _v$3 !== _p$.a && (_p$.a = _$setProp(_el$11, "fg", _v$3, _p$.a));
+        _v$ !== _p$.e && (_p$.e = _$setProp(_el$10, "backgroundColor", _v$, _p$.e));
+        _v$2 !== _p$.t && (_p$.t = _$setProp(_el$11, "fg", _v$2, _p$.t));
+        _v$3 !== _p$.a && (_p$.a = _$setProp(_el$12, "fg", _v$3, _p$.a));
         return _p$;
       }, {
         e: undefined,
         t: undefined,
         a: undefined
       });
-      return _el$1;
+      return _el$10;
     })();
   }
   function sticky(read) {
@@ -2112,10 +2133,10 @@ function BetterTabs() {
             return props.position > 0;
           },
           get children() {
-            var _el$20 = _$createElement("box");
-            _$setProp(_el$20, "height", 1);
-            _$setProp(_el$20, "flexShrink", 0);
-            return _el$20;
+            var _el$21 = _$createElement("box");
+            _$setProp(_el$21, "height", 1);
+            _$setProp(_el$21, "flexShrink", 0);
+            return _el$21;
           }
         }), _$createComponent(GroupRow, {
           get group() {
@@ -2165,27 +2186,27 @@ function BetterTabs() {
   }
   function NewSessionRow() {
     return (() => {
-      var _el$21 = _$createElement("box"), _el$22 = _$createElement("text");
-      _$insertNode(_el$21, _el$22);
-      _$setProp(_el$21, "flexDirection", "row");
-      _$setProp(_el$21, "height", rowHeight);
-      _$setProp(_el$21, "flexShrink", 0);
-      _$setProp(_el$21, "paddingTop", padding);
-      _$setProp(_el$21, "onMouseOver", () => setHovered("new"));
-      _$setProp(_el$21, "onMouseOut", () => setHovered(undefined));
-      _$setProp(_el$21, "onMouseUp", (event) => click(event, () => ctx.keymap.dispatch("session.new")));
-      _$setProp(_el$22, "selectable", false);
-      _$insert(_el$22, () => narrow() ? " +" : " + New session");
+      var _el$22 = _$createElement("box"), _el$23 = _$createElement("text");
+      _$insertNode(_el$22, _el$23);
+      _$setProp(_el$22, "flexDirection", "row");
+      _$setProp(_el$22, "height", rowHeight);
+      _$setProp(_el$22, "flexShrink", 0);
+      _$setProp(_el$22, "paddingTop", padding);
+      _$setProp(_el$22, "onMouseOver", () => setHovered("new"));
+      _$setProp(_el$22, "onMouseOut", () => setHovered(undefined));
+      _$setProp(_el$22, "onMouseUp", (event) => click(event, () => ctx.keymap.dispatch("session.new")));
+      _$setProp(_el$23, "selectable", false);
+      _$insert(_el$23, () => narrow() ? " +" : " + New session");
       _$effect((_p$) => {
         var _v$4 = rowBackground("new", false), _v$5 = theme().text.muted;
-        _v$4 !== _p$.e && (_p$.e = _$setProp(_el$21, "backgroundColor", _v$4, _p$.e));
-        _v$5 !== _p$.t && (_p$.t = _$setProp(_el$22, "fg", _v$5, _p$.t));
+        _v$4 !== _p$.e && (_p$.e = _$setProp(_el$22, "backgroundColor", _v$4, _p$.e));
+        _v$5 !== _p$.t && (_p$.t = _$setProp(_el$23, "fg", _v$5, _p$.t));
         return _p$;
       }, {
         e: undefined,
         t: undefined
       });
-      return _el$21;
+      return _el$22;
     })();
   }
   const toggleHidden = () => {
@@ -2344,11 +2365,11 @@ function BetterTabs() {
     }))
   }));
   return [(() => {
-    var _el$23 = _$createElement("box");
-    _$use((element) => anchor = element, _el$23);
-    _$setProp(_el$23, "height", 0);
-    _$setProp(_el$23, "flexShrink", 0);
-    return _el$23;
+    var _el$24 = _$createElement("box");
+    _$use((element) => anchor = element, _el$24);
+    _$setProp(_el$24, "height", 0);
+    _$setProp(_el$24, "flexShrink", 0);
+    return _el$24;
   })(), _$createComponent(Show, {
     get when() {
       return _$memo(() => !!visible())() && host();
@@ -2364,23 +2385,23 @@ function BetterTabs() {
         container.zIndex = 20;
       },
       get children() {
-        var _el$24 = _$createElement("box"), _el$25 = _$createElement("scrollbox"), _el$26 = _$createElement("box"), _el$27 = _$createElement("box");
-        _$insertNode(_el$24, _el$25);
-        _$setProp(_el$24, "flexDirection", "column");
-        _$setProp(_el$24, "onMouseDrag", dragMove);
-        _$setProp(_el$24, "onMouseDragEnd", () => finishDrag());
-        _$setProp(_el$24, "onMouseUp", () => finishDrag());
+        var _el$25 = _$createElement("box"), _el$26 = _$createElement("scrollbox"), _el$27 = _$createElement("box"), _el$28 = _$createElement("box");
         _$insertNode(_el$25, _el$26);
-        _$setProp(_el$25, "flexGrow", 1);
-        _$setProp(_el$25, "minHeight", 0);
-        _$setProp(_el$25, "scrollbarOptions", {
+        _$setProp(_el$25, "flexDirection", "column");
+        _$setProp(_el$25, "onMouseDrag", dragMove);
+        _$setProp(_el$25, "onMouseDragEnd", () => finishDrag());
+        _$setProp(_el$25, "onMouseUp", () => finishDrag());
+        _$insertNode(_el$26, _el$27);
+        _$setProp(_el$26, "flexGrow", 1);
+        _$setProp(_el$26, "minHeight", 0);
+        _$setProp(_el$26, "scrollbarOptions", {
           visible: false
         });
-        _$insertNode(_el$26, _el$27);
-        _$setProp(_el$26, "flexDirection", "column");
-        _$setProp(_el$26, "flexShrink", 0);
-        _$setProp(_el$26, "paddingTop", 1);
-        _$insert(_el$26, _$createComponent(For, {
+        _$insertNode(_el$27, _el$28);
+        _$setProp(_el$27, "flexDirection", "column");
+        _$setProp(_el$27, "flexShrink", 0);
+        _$setProp(_el$27, "paddingTop", 1);
+        _$insert(_el$27, _$createComponent(For, {
           get each() {
             return groupKeys();
           },
@@ -2390,22 +2411,22 @@ function BetterTabs() {
               return position();
             }
           })
-        }), _el$27);
-        _$setProp(_el$27, "height", 1);
-        _$setProp(_el$27, "flexShrink", 0);
-        _$insert(_el$26, _$createComponent(NewSessionRow, {}), null);
+        }), _el$28);
+        _$setProp(_el$28, "height", 1);
+        _$setProp(_el$28, "flexShrink", 0);
+        _$insert(_el$27, _$createComponent(NewSessionRow, {}), null);
         _$effect((_p$) => {
           var _v$6 = innerWidth(), _v$7 = geometry().height, _v$8 = background();
-          _v$6 !== _p$.e && (_p$.e = _$setProp(_el$24, "width", _v$6, _p$.e));
-          _v$7 !== _p$.t && (_p$.t = _$setProp(_el$24, "height", _v$7, _p$.t));
-          _v$8 !== _p$.a && (_p$.a = _$setProp(_el$24, "backgroundColor", _v$8, _p$.a));
+          _v$6 !== _p$.e && (_p$.e = _$setProp(_el$25, "width", _v$6, _p$.e));
+          _v$7 !== _p$.t && (_p$.t = _$setProp(_el$25, "height", _v$7, _p$.t));
+          _v$8 !== _p$.a && (_p$.a = _$setProp(_el$25, "backgroundColor", _v$8, _p$.a));
           return _p$;
         }, {
           e: undefined,
           t: undefined,
           a: undefined
         });
-        return _el$24;
+        return _el$25;
       }
     })
   })];
