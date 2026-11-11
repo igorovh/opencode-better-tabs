@@ -1,0 +1,49 @@
+name: Pullfrog deep review
+
+# Adding the deep-review label reviews the PR again on a stronger model than the default one.
+on:
+  pull_request_target:
+    types: [labeled]
+  workflow_call:
+    inputs:
+      pr:
+        type: number
+        required: true
+
+permissions: {}
+
+jobs:
+  review:
+    # In a workflow_call, github.event is the caller's event, so the input tells the two apart.
+    if: inputs.pr || github.event.label.name == 'deep-review'
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+    env:
+      PR: ${{ inputs.pr || github.event.pull_request.number }}
+    steps:
+      # Base branch only: the agent checks out the PR itself inside Pullfrog's sandbox.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+      - uses: pullfrog/pullfrog@88bcc3d4bb26951b99fafe09f65d90d20d5b6d62 # v0.1.126
+        with:
+          prompt: >-
+            Review pull request #${{ env.PR }} in depth, following the review instructions.
+            Check it out with checkout_pr, run the repository checks, and post one review with
+            inline comments on the exact lines.
+          model: opencode-go/kimi-k3.1-pro
+          effort: max
+          push: disabled
+          shell: restricted
+      - name: Remove the label so it can be added again
+        if: always() && !inputs.pr
+        run: gh pr edit "$PR" --remove-label deep-review
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
