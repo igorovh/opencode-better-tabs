@@ -60,7 +60,7 @@ jobs:
 
   implement:
     needs: gate
-    if: needs.gate.outputs.skip != 'true'
+    if: needs.gate.result == 'success' && needs.gate.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 70
     permissions:
@@ -214,7 +214,9 @@ jobs:
           # A rerun replaces only this workflow's own commit, never work a person pushed to the branch.
           lease=""
           if git fetch --quiet origin "$branch" 2>/dev/null; then
-            if [ "$(git log -1 --format=%ae FETCH_HEAD)" != "41898282+github-actions[bot]@users.noreply.github.com" ]; then
+            # Every commit on the branch must be the bot's, not only the tip.
+            authors=$(gh api "repos/$GH_REPO/compare/$DEFAULT_BRANCH...$branch" --jq '[.commits[].commit.author.email] | unique | join(" ")')
+            if [ "$authors" != "41898282+github-actions[bot]@users.noreply.github.com" ]; then
               echo "::warning::$branch has commits from someone else, so it is left alone"
               exit 0
             fi
