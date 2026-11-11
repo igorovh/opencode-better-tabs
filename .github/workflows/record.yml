@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/setup-record
       - env:
-          STEPS: ${{ inputs.steps || 'hover Dark mode; drag ▾ docs -> ▾ api; key alt+2; wait 800; key Escape; close Flaky checkout; wait 1200' }}
+          STEPS: ${{ inputs.steps || 'hover Dark mode; drag ▾ docs -> ▾ api; key alt+2; wait 800; key Escape; close Flaky checkout; expect Close tab; key Enter; expect-not Flaky checkout' }}
           OPTIONS: ${{ inputs.options || '{"confirmClose":true}' }}
         run: |
           tr ';' '\n' <<< "$STEPS" > steps.txt

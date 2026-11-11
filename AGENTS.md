@@ -20,8 +20,14 @@
   `OPENCODE_BIN` and `TTYD_BIN`) and Playwright's Chromium. Run it without steps to see the step list.
 - `--options '{"confirmClose":true}'` passes plugin options and `--sidebar` crops the GIF to the tab bar.
   `--plugin <path>` records another checkout, such as a worktree of the base branch.
+- `--sessions sessions.json` replaces the sample tabs with a JSON array of `{ "project", "title" }`. Busy and
+  unread tabs need a model run, so show those states with `bun run preview`.
+- `expect <text>` and `expect-not <text>` steps fail the recording when the screen does not match, so a GIF
+  doubles as a test. Put them after every action, for example `close Two`, `expect Close tab`, `key Enter`,
+  `expect-not Two`.
 - Every PR that changes `src/` in a way the user can see or touch must include a GIF of the changed behaviour,
-  before and after. A reviewer records them when the author did not.
+  before and after. A reviewer records them when the author did not: read the diff, script the new behaviour
+  with `expect` checks, record it on the PR branch and on the base branch, and post the steps with the GIFs.
 
 ## Pull requests
 
