@@ -49,6 +49,8 @@ const work = mkdtempSync(path.join(os.tmpdir(), "better-tabs-record-"))
 const port = () => 40000 + Math.floor(Math.random() * 20000)
 const serverPort = port()
 const ttydPort = serverPort + 1
+// ttyd listens on every interface and the terminal is writable, so keep others on the network out.
+const ttydCredential = { username: "record", password: crypto.randomUUID() }
 const password = "record"
 const env = {
   ...process.env,
@@ -132,15 +134,16 @@ try {
 
   start(
     ttydBin,
-    ["-p", String(ttydPort), "-W", "-t", "fontSize=15", "-t", "disableLeaveAlert=true", opencodeBin, "--server", api],
+    ["-p", String(ttydPort), "-c", `${ttydCredential.username}:${ttydCredential.password}`, "-W", "-t", "fontSize=15", "-t", "disableLeaveAlert=true", opencodeBin, "--server", api],
     { cwd: path.join(work, "repos", sessions[0]!.project) },
   )
-  await until("ttyd", async () => (await fetch(`http://127.0.0.1:${ttydPort}`)).ok || undefined)
+  await until("ttyd", async () => (await fetch(`http://127.0.0.1:${ttydPort}`, { headers: { authorization: `Basic ${btoa(`${ttydCredential.username}:${ttydCredential.password}`)}` } })).ok || undefined)
 
   const width = Number(values.width)
   const height = Number(values.height)
   const browser = await chromium.launch()
   const context = await browser.newContext({
+    httpCredentials: ttydCredential,
     viewport: { width, height },
     recordVideo: { dir: path.join(work, "video"), size: { width, height } },
   })

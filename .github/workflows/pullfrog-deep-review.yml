@@ -9,6 +9,9 @@ on:
       pr:
         type: number
         required: true
+      shell:
+        type: string
+        default: restricted
 
 permissions: {}
 
@@ -36,12 +39,12 @@ jobs:
         with:
           prompt: >-
             Review pull request #${{ env.PR }} in depth, following the review instructions.
-            Check it out with checkout_pr, run the repository checks, and post one review with
-            inline comments on the exact lines.
+            Check it out with checkout_pr, run the repository checks if you have a shell, and post
+            one review with inline comments on the exact lines.
           model: opencode-go/kimi-k3.1-pro
           effort: max
           push: disabled
-          shell: restricted
+          shell: ${{ inputs.shell || 'restricted' }}
       - name: Remove the label so it can be added again
         if: always() && !inputs.pr
         run: gh pr edit "$PR" --remove-label deep-review

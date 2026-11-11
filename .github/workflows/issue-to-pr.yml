@@ -11,6 +11,10 @@ on:
         description: Issue number to attempt again
         required: true
         type: number
+      sandbox:
+        description: Treat the author as an outside contributor (no shell), to test that path
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -21,8 +25,42 @@ env:
   ISSUE: ${{ github.event.issue.number || inputs.issue }}
 
 jobs:
-  implement:
+  # Runs no repository code. Outside contributors get no shell, since the issue text can steer the agent
+  # into running code it wrote; their attempts are also limited to a few per day.
+  gate:
     if: github.event_name == 'workflow_dispatch' || github.event.issue.user.type != 'Bot'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    outputs:
+      trusted: ${{ steps.author.outputs.trusted }}
+      skip: ${{ steps.author.outputs.skip }}
+    steps:
+      - id: author
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SANDBOX: ${{ inputs.sandbox == true }}
+        run: |
+          read -r login association < <(gh api "repos/$GH_REPO/issues/$ISSUE" --jq '"\(.user.login) \(.author_association)"')
+          case "$association" in
+            OWNER|MEMBER|COLLABORATOR) trusted=true ;;
+            *) trusted=false ;;
+          esac
+          [ "$SANDBOX" = true ] && trusted=false
+          echo "trusted=$trusted" >> "$GITHUB_OUTPUT"
+          if [ "$trusted" = false ] && [ "$SANDBOX" != true ]; then
+            since=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+            count=$(gh api -X GET search/issues -f q="repo:$GH_REPO is:issue author:$login created:>=$since" --jq .total_count)
+            if [ "$count" -gt 2 ]; then
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              gh issue comment "$ISSUE" --body "Thanks for the report! Automatic fixes are limited to a few issues per person per day, so a maintainer will take a look at this one."
+            fi
+          fi
+
+  implement:
+    needs: gate
+    if: needs.gate.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 70
     permissions:
@@ -47,7 +85,7 @@ jobs:
         with:
           timeout: 1h
           push: disabled
-          shell: restricted
+          shell: ${{ needs.gate.outputs.trusted == 'true' && 'restricted' || 'disabled' }}
           progress_comments: disabled
           prompt: |
             Try to resolve issue #${{ env.ISSUE }} in ${{ github.repository }}.
@@ -60,8 +98,8 @@ jobs:
             implementation "none" with a short, friendly reason addressed to the issue author.
 
             Otherwise make the smallest change that resolves the issue. Follow AGENTS.md and the
-            patterns in the files you edit, add or update tests, and run `bun install`,
-            `bun run typecheck`, `bun test` and `bun run compile` (dist/ must match src/).
+            patterns in the files you edit, and add or update tests.
+            ${{ needs.gate.outputs.trusted == 'true' && 'Run `bun install`, `bun run typecheck`, `bun test` and `bun run compile` (dist/ must match src/).' || 'You have no shell in this run, so edit files only. CI runs the checks on the PR, so also update dist/ only if you can do it exactly; otherwise say in the PR body that dist/ needs `bun run compile`.' }}
             Do not change anything under .github/. Leave the changes uncommitted. Never call the
             commit, push or pull request tools: this run has no push access by design, and the
             workflow publishes your change as a PR after you finish. Do not report a failed push.
@@ -100,7 +138,8 @@ jobs:
           fi
           # Includes commits the agent made by mistake, and new files.
           git add --all --intent-to-add
-          mapfile -t changed < <(git diff --name-only "$BASE" --)
+          # --no-renames lists both sides of a rename, so moving a file out of .github/ is caught too.
+          mapfile -t changed < <(git diff --no-renames --name-only "$BASE" --)
           if [ "${#changed[@]}" -eq 0 ] || [ "${#changed[@]}" -gt 100 ]; then
             echo "::error::The patch must change between 1 and 100 files, not ${#changed[@]}"
             exit 1
@@ -109,7 +148,11 @@ jobs:
             echo "::error::The patch changes .github/, which this workflow never publishes"
             exit 1
           fi
-          git diff --binary --full-index "$BASE" -- > "$OUT/patch.diff"
+          if git diff --no-renames --raw "$BASE" -- | awk '$2 == "120000"' | grep -q .; then
+            echo "::error::The patch adds a symlink, which this workflow never publishes"
+            exit 1
+          fi
+          git diff --no-renames --binary --full-index "$BASE" -- > "$OUT/patch.diff"
           if [ "$(stat -c %s "$OUT/patch.diff")" -gt 5000000 ]; then
             echo "::error::The patch is over 5 MB"
             exit 1
@@ -168,6 +211,15 @@ jobs:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           branch="pullfrog/issue-$ISSUE"
+          # A rerun replaces only this workflow's own commit, never work a person pushed to the branch.
+          lease=""
+          if git fetch --quiet origin "$branch" 2>/dev/null; then
+            if [ "$(git log -1 --format=%ae FETCH_HEAD)" != "41898282+github-actions[bot]@users.noreply.github.com" ]; then
+              echo "::warning::$branch has commits from someone else, so it is left alone"
+              exit 0
+            fi
+            lease="--force-with-lease=$branch:$(git rev-parse FETCH_HEAD)"
+          fi
           git switch -C "$branch"
           git apply --index "$IN/patch.diff"
 
@@ -189,7 +241,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit --quiet --file message.txt
-          git push --force origin "$branch"
+          git push ${lease:+"$lease"} origin "$branch"
 
           { jq -r .body "$IN/pr.json"; printf '\nCloses #%s\n' "$ISSUE"; } > body.md
           number=$(gh pr list --head "$branch" --state open --json number --jq '.[0].number // empty')
@@ -208,7 +260,8 @@ jobs:
             -f description="Title checked by the Issue to PR workflow"
 
   deep-review:
-    needs: publish
+    needs: [gate, publish]
+    if: needs.publish.outputs.pr != ''
     permissions:
       id-token: write
       contents: read
@@ -216,3 +269,5 @@ jobs:
     uses: ./.github/workflows/pullfrog-deep-review.yml
     with:
       pr: ${{ fromJSON(needs.publish.outputs.pr) }}
+      # The PR holds code an outside contributor's issue steered, so the reviewer gets no shell either.
+      shell: ${{ needs.gate.outputs.trusted == 'true' && 'restricted' || 'disabled' }}
