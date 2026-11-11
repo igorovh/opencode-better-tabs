@@ -13,6 +13,16 @@
 - When a change affects what the bar shows, render it on the base branch and on your branch and post both images
   as "Before" and "After".
 
+## Demo recordings
+
+- `bun run record -- --out demo.gif --step "hover Dark mode" --step "close Flaky checkout"` records the real
+  OpenCode TUI with this checkout's plugin to a GIF. It needs `opencode`, `ttyd` and `ffmpeg` on `PATH` (or
+  `OPENCODE_BIN` and `TTYD_BIN`) and Playwright's Chromium. Run it without steps to see the step list.
+- `--options '{"confirmClose":true}'` passes plugin options and `--sidebar` crops the GIF to the tab bar.
+  `--plugin <path>` records another checkout, such as a worktree of the base branch.
+- Every PR that changes `src/` in a way the user can see or touch must include a GIF of the changed behaviour,
+  before and after. A reviewer records them when the author did not.
+
 ## Pull requests
 
 - PRs are squash-merged and the title becomes the changelog entry, so it must be a Conventional Commit such as

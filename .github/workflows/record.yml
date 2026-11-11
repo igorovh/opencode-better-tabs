@@ -1,0 +1,36 @@
+name: Record demo
+
+# Records the real OpenCode TUI with this branch's plugin, for checking a change by hand.
+on:
+  # Also checks the recorder itself whenever it changes.
+  pull_request:
+    paths: [scripts/record.ts, .github/actions/setup-record/**, .github/workflows/record.yml]
+  workflow_dispatch:
+    inputs:
+      steps:
+        description: Steps separated by semicolons, such as "hover Dark mode; key alt+2"
+        default: "hover Dark mode; drag ▾ docs -> ▾ api; key alt+2; wait 800; key Escape"
+      options:
+        description: Plugin options as JSON
+        default: "{}"
+
+permissions:
+  contents: read
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-record
+      - env:
+          STEPS: ${{ inputs.steps || 'hover Dark mode; drag ▾ docs -> ▾ api; key alt+2; wait 800; key Escape; close Flaky checkout; wait 1200' }}
+          OPTIONS: ${{ inputs.options || '{"confirmClose":true}' }}
+        run: |
+          tr ';' '\n' <<< "$STEPS" > steps.txt
+          bun run record -- --out demo.gif --steps steps.txt --options "$OPTIONS"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: demo
+          path: demo.gif

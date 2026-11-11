@@ -26,8 +26,8 @@ jobs:
         with:
           fetch-depth: 1
           persist-credentials: false
-      # The agent runs bun for typecheck, tests, compile and the UI preview.
-      - uses: oven-sh/setup-bun@v2
+      # Bun for the checks, plus OpenCode, ttyd, ffmpeg and Chromium for `bun run record`.
+      - uses: ./.github/actions/setup-record
       - name: Run agent
         uses: pullfrog/pullfrog@88bcc3d4bb26951b99fafe09f65d90d20d5b6d62 # v0.1.126
         with:
