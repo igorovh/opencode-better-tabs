@@ -62,8 +62,9 @@ jobs:
             Otherwise make the smallest change that resolves the issue. Follow AGENTS.md and the
             patterns in the files you edit, add or update tests, and run `bun install`,
             `bun run typecheck`, `bun test` and `bun run compile` (dist/ must match src/).
-            Do not change anything under .github/. Leave the changes uncommitted: do not commit,
-            push or open a pull request, because this workflow does that.
+            Do not change anything under .github/. Leave the changes uncommitted. Never call the
+            commit, push or pull request tools: this run has no push access by design, and the
+            workflow publishes your change as a PR after you finish. Do not report a failed push.
 
             Return implementation "prepared" with a one-line Conventional Commit title
             (for example "fix: keep the tab order after a restart") and a PR body that explains
