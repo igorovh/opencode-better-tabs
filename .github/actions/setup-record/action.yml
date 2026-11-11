@@ -9,7 +9,8 @@ runs:
       run: |
         # Match the OpenCode version the tests and dist are built against.
         version=$(jq -r '.devDependencies["@opencode/plugin"]' package.json)
-        bun add --global "@opencode/cli@$version"
+        # npm runs the postinstall that puts the platform binary in place; bun skips it.
+        npm install --global "@opencode/cli@$version"
         sudo curl -fsSL -o /usr/local/bin/ttyd https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64
         sudo chmod +x /usr/local/bin/ttyd
         sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg > /dev/null
