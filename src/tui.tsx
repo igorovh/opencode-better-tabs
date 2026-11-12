@@ -78,6 +78,12 @@ function BetterTabs() {
     ctx.ui.toast.show({ title: "Better tabs", message, variant })
   const fail = (error: unknown) => toast(error instanceof Error ? error.message : String(error), "error")
 
+  const options = readOptions(ctx.options)
+  for (const warning of options.warnings) toast(warning, "warning")
+  const { modifier, slotKeys, confirmClose, padding } = options
+  // Dragging is off in recent mode: activity would undo any manual move at once.
+  const recent = options.sort === "recent"
+
   // Tabs, sessions and groups ------------------------------------------------------------------
 
   // While tabs are hidden the host no longer tracks them, so fall back to the last known list.
@@ -154,11 +160,18 @@ function BetterTabs() {
   const titleOf = (tab: Pick<Tab, "sessionID" | "title">) =>
     ctx.data.session.get(tab.sessionID)?.title ?? tab.title ?? "Untitled session"
 
+  // `busy` marks the start of the latest run, so a tab moves once per message instead of while it streams.
+  const activityOf = (sessionID: string) => {
+    const time = ctx.data.session.get(sessionID)?.time
+    return time?.busy ?? time?.created ?? 0
+  }
+  const groupActivity = (group: Group) => Math.max(0, ...group.tabs.map((tab) => activityOf(tab.sessionID)))
+
   // Saving the order is async, so moves made before it lands use this local copy instead.
   const [localOrder, setLocalOrder] = createSignal<string[]>()
   let orderWrites = 0
 
-  // Groups in their saved order; groups without a saved position follow in tab order.
+  // Groups in their saved order, or by latest activity in recent mode; ties and new groups follow in tab order.
   const orderedGroups = createMemo(() => {
     const result = new Map<string, Group>()
     for (const tab of tabs()) {
@@ -172,17 +185,28 @@ function BetterTabs() {
       const index = order.indexOf(key)
       return index === -1 ? order.length : index
     }
-    return [...result.values()].sort((left, right) => rank(left.key) - rank(right.key))
+    const list = [...result.values()]
+    if (recent)
+      for (const group of list) group.tabs.sort((left, right) => activityOf(right.sessionID) - activityOf(left.sessionID))
+    return list.sort((left, right) => (recent && groupActivity(right) - groupActivity(left)) || rank(left.key) - rank(right.key))
   })
 
-  // Live reorder while a group header is being dragged.
+  // Live reorder while a group header or a tab is being dragged.
   const [drag, setDrag] = createSignal<{ key: string; startY: number; moved: boolean; target: number }>()
+  const [tabDrag, setTabDrag] = createSignal<{ sessionID: string; startY: number; moved: boolean; target: number }>()
   const groups = createMemo(() => {
-    const list = orderedGroups()
+    let list = orderedGroups()
     const current = drag()
-    if (!current?.moved) return list
-    const from = list.findIndex((group) => group.key === current.key)
-    return from === -1 ? list : moveItem(list, from, current.target)
+    if (current?.moved) {
+      const from = list.findIndex((group) => group.key === current.key)
+      if (from !== -1) list = moveItem(list, from, current.target)
+    }
+    const dragged = tabDrag()
+    if (!dragged?.moved) return list
+    return list.map((group) => {
+      const from = group.tabs.findIndex((tab) => tab.sessionID === dragged.sessionID)
+      return from === -1 ? group : { ...group, tabs: moveItem(group.tabs, from, dragged.target) }
+    })
   })
 
   const moveGroup = (key: string, to: number) => {
@@ -198,6 +222,19 @@ function BetterTabs() {
       .finally(() => {
         if (write === orderWrites) setLocalOrder(undefined)
       })
+  }
+
+  // Tabs keep their order in the host list, so a move puts the tab next to its new neighbour there.
+  const moveTab = (sessionID: string, to: number) => {
+    const ids = orderedGroups()
+      .find((group) => group.tabs.some((tab) => tab.sessionID === sessionID))
+      ?.tabs.map((tab) => tab.sessionID)
+    if (!ids) return
+    const next = moveItem(ids, ids.indexOf(sessionID), to)
+    const at = next.indexOf(sessionID)
+    const host = ctx.ui.tabs.list().map((tab) => tab.sessionID).filter((id) => id !== sessionID)
+    const index = at > 0 ? host.indexOf(next[at - 1]!) + 1 : host.indexOf(next[1] ?? "")
+    if (index >= 0) ctx.ui.tabs.move(sessionID, index)
   }
 
   // Order the host's tabs like our groups, so both bars agree.
@@ -225,9 +262,6 @@ function BetterTabs() {
   }
 
   // Two-step shortcuts: alt+G picks group G, then alt+T opens tab T of that group ----------------
-  const options = readOptions(ctx.options)
-  for (const warning of options.warnings) toast(warning, "warning")
-  const { modifier, slotKeys, confirmClose, padding } = options
 
   // Terminal rows are one cell tall, so padding adds whole blank lines around the label.
   const rowHeight = 1 + padding * 2
@@ -266,6 +300,7 @@ function BetterTabs() {
   const moveSelected = (delta: number) => {
     const selected = pending()
     if (selected === undefined) return
+    if (recent) return toast('Groups follow recent activity; set sort to "manual" to move them')
     const from = orderedGroups().findIndex((group) => group.key === selected)
     if (from === -1) return
     moveGroup(selected, Math.max(0, Math.min(orderedGroups().length - 1, from + delta)))
@@ -370,6 +405,8 @@ function BetterTabs() {
   const [hovered, setHovered] = createSignal<string>()
   // Releasing a drag also sends "up" to whatever row is under the pointer; that is not a click.
   let dropped = false
+  // "up" also reaches the pressed row after drag end cleared the drag, so the pressed header is kept here.
+  let pressedGroup: string | undefined
   const click = (event: MouseEvent, run: () => void) => {
     event.stopPropagation()
     if (!dropped) run()
@@ -390,20 +427,42 @@ function BetterTabs() {
       return !!header && !header.isDestroyed && header.screenY + (header.height - 1) / 2 < y
     }).length
 
+  // Tabs move within their group, and the dragged tab takes the place of the row under the pointer.
+  const tabRows = new Map<string, BoxRenderable>()
+  const tabDropTarget = (sessionID: string, y: number) => {
+    const own = tabRows.get(sessionID)
+    const group = orderedGroups().find((item) => item.tabs.some((tab) => tab.sessionID === sessionID))
+    if (!own || own.isDestroyed || !group) return 0
+    return group.tabs.filter((tab) => {
+      const row = tabRows.get(tab.sessionID)
+      if (tab.sessionID === sessionID || !row || row.isDestroyed) return false
+      return row.screenY > own.screenY ? row.screenY <= y : row.screenY + row.height - 1 < y
+    }).length
+  }
+
   // Drag events go to whatever row the pointer first moved onto, so the whole bar handles them.
   const dragMove = (event: MouseEvent) => {
     const current = drag()
-    if (!current) return
-    const moved = current.moved || event.y !== current.startY
-    if (moved) setDrag({ ...current, moved, target: dropTarget(current.key, event.y) })
+    if (current) {
+      if (recent) return
+      const moved = current.moved || event.y !== current.startY
+      if (moved) setDrag({ ...current, moved, target: dropTarget(current.key, event.y) })
+      return
+    }
+    const dragged = tabDrag()
+    if (!dragged) return
+    const moved = dragged.moved || event.y !== dragged.startY
+    if (moved) setTabDrag({ ...dragged, moved, target: tabDropTarget(dragged.sessionID, event.y) })
   }
 
   const finishDrag = () => {
     const current = drag()
-    if (!current) return false
+    const dragged = tabDrag()
     setDrag(undefined)
-    if (!current.moved) return false
-    moveGroup(current.key, current.target)
+    setTabDrag(undefined)
+    if (current?.moved) moveGroup(current.key, current.target)
+    else if (dragged?.moved) moveTab(dragged.sessionID, dragged.target)
+    else return false
     dropped = true
     setTimeout(() => (dropped = false))
     return true
@@ -445,12 +504,15 @@ function BetterTabs() {
         onMouseDown={(event: MouseEvent) => {
           if (event.button !== 0) return
           event.stopPropagation()
+          pressedGroup = props.group.key
           setDrag({ key: props.group.key, startY: event.y, moved: false, target: props.position })
         }}
         onMouseUp={(event: MouseEvent) =>
           click(event, () => {
-            // A finished drag reorders; a plain click toggles the group.
-            if (!finishDrag() && event.button === 0) toggleGroup(props.group.key)
+            // A finished drag reorders; a click pressed and released on this header toggles the group.
+            const over = !!header && event.y >= header.screenY && event.y < header.screenY + header.height
+            if (!finishDrag() && event.button === 0 && pressedGroup === props.group.key && over)
+              toggleGroup(props.group.key)
           })
         }
       >
@@ -486,7 +548,18 @@ function BetterTabs() {
   function TabRow(props: { tab: Tab; groupKey: string; position: number }) {
     const id = () => `tab:${props.tab.sessionID}`
     const armed = () => pending() === props.groupKey
-    const dragged = () => !!drag()?.moved && props.groupKey === drag()?.key
+    const dragged = () =>
+      (!!drag()?.moved && props.groupKey === drag()?.key) ||
+      (!!tabDrag()?.moved && tabDrag()?.sessionID === props.tab.sessionID)
+    // A collapsed group hides rows, so the drop position could not be read from the screen.
+    const draggable = () => {
+      const group = groupByKey(props.groupKey)
+      return !recent && !!group && visibleTabIDs(group).length === group.tabs.length
+    }
+    let row: BoxRenderable | undefined
+    onCleanup(() => {
+      if (tabRows.get(props.tab.sessionID) === row) tabRows.delete(props.tab.sessionID)
+    })
     // Tabs show the second key of the chord only while their group is selected.
     const keys = () => (armed() ? slotLabel(props.position) : "")
     // Layout: marker, status, space, title, space, keys, space, close button (2 columns, always reserved).
@@ -495,6 +568,7 @@ function BetterTabs() {
     const [closeHovered, setCloseHovered] = createSignal(false)
     return (
       <box
+        ref={(element: BoxRenderable) => tabRows.set(props.tab.sessionID, (row = element))}
         flexDirection="row"
         height={rowHeight}
         flexShrink={0}
@@ -502,8 +576,15 @@ function BetterTabs() {
         backgroundColor={dragged() ? theme().background.raised.high : rowBackground(id(), props.tab.active)}
         onMouseOver={() => setHovered(id())}
         onMouseOut={() => setHovered(undefined)}
+        onMouseDown={(event: MouseEvent) => {
+          pressedGroup = undefined
+          if (event.button !== 0 || !draggable()) return
+          event.stopPropagation()
+          setTabDrag({ sessionID: props.tab.sessionID, startY: event.y, moved: false, target: props.position })
+        }}
         onMouseUp={(event: MouseEvent) =>
           click(event, () => {
+            if (finishDrag()) return
             if (event.button === 1) void requestClose(props.tab.sessionID).catch(fail)
             else if (event.button === 0) focus(props.tab.sessionID)
           })
@@ -781,6 +862,7 @@ function BetterTabs() {
               height={geometry().height}
               flexDirection="column"
               backgroundColor={background()}
+              onMouseDown={() => (pressedGroup = undefined)}
               onMouseDrag={dragMove}
               onMouseDragEnd={() => finishDrag()}
               onMouseUp={() => finishDrag()}

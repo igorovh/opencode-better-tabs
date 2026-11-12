@@ -6,10 +6,20 @@ export const DEFAULT_MODIFIER = "alt"
 export const DEFAULT_CONFIRM_CLOSE = false
 // Rows are one line of text; padding adds a blank line above and below it, opt-in.
 export const DEFAULT_PADDING = 0
+// "recent" puts the latest activity first; "manual" keeps the order set by dragging.
+export type Sort = "manual" | "recent"
+export const DEFAULT_SORT: Sort = "manual"
 const MAX_PADDING = 3
 const MODIFIERS = new Set(["alt", "ctrl", "shift", "meta", "super", "hyper"])
 
-export type Options = { modifier: string; slotKeys: string[]; confirmClose: boolean; padding: number; warnings: string[] }
+export type Options = {
+  modifier: string
+  slotKeys: string[]
+  confirmClose: boolean
+  padding: number
+  sort: Sort
+  warnings: string[]
+}
 
 export function readOptions(raw: Record<string, unknown> | undefined): Options {
   const warnings: string[] = []
@@ -36,5 +46,10 @@ export function readOptions(raw: Record<string, unknown> | undefined): Options {
       padding = raw.padding
     else warnings.push(`Ignoring padding ${JSON.stringify(raw.padding)}; it needs a whole number from 0 to ${MAX_PADDING}`)
   }
-  return { modifier, slotKeys, confirmClose, padding, warnings }
+  let sort = DEFAULT_SORT
+  if (raw?.sort !== undefined) {
+    if (raw.sort === "manual" || raw.sort === "recent") sort = raw.sort
+    else warnings.push(`Ignoring sort ${JSON.stringify(raw.sort)}; it needs "manual" or "recent"`)
+  }
+  return { modifier, slotKeys, confirmClose, padding, sort, warnings }
 }

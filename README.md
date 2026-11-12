@@ -33,6 +33,9 @@ with `alt+↑`, and searching all tabs with `/tabs`. It uses made-up repositorie
   collapsed group with `alt+N` opens it until you pick a tab.
 - **Reorder groups** by dragging a header with the mouse, or select a group with `alt+N` and press
   `alt+↑` / `alt+↓`. The order is saved and the built-in tab order follows it.
+- **Reorder tabs** inside an expanded group by dragging them with the mouse.
+- **Sort by recent activity** with the `sort` option: the group and the tab where you last sent a message move to
+  the top.
 - **Close tabs** with the `✕` that appears on hover, or with a middle click.
 - **Hide the bar** with a command, and show it again.
 
@@ -110,6 +113,9 @@ Add an entry to `cli.json` whose `package` is exactly the same string as in `ope
 - `padding`: blank lines above and below the label of every row (tab, group header and `+ New session`), from `0`
   to `3`. Default `0`, so rows stay one line tall. Set it to `1` to give the hover and active backgrounds some
   air: the row grows to `1 + padding × 2` lines. Terminal rows are one cell tall, so a gap is a whole blank line.
+- `sort`: `"manual"` (default) keeps the order you set by dragging. `"recent"` puts the group and the tab whose
+  session last started working first, so a tab moves once when you send a message, not while it works. Tabs that
+  never ran count from when they were created. Dragging and `alt+↑` / `alt+↓` are off in this mode.
 
 To change or turn off a command shortcut, set its command ID under `keybinds` in the same `cli.json`. Use `"none"`
 to turn it off:

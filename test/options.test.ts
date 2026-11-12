@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { DEFAULT_CONFIRM_CLOSE, DEFAULT_KEYS, DEFAULT_PADDING, readOptions } from "../src/options"
+import { DEFAULT_CONFIRM_CLOSE, DEFAULT_KEYS, DEFAULT_PADDING, DEFAULT_SORT, readOptions } from "../src/options"
 
 test("defaults to alt, the built-in key pool, no close confirmation and unpadded rows", () => {
   expect(readOptions({})).toEqual({
@@ -7,6 +7,7 @@ test("defaults to alt, the built-in key pool, no close confirmation and unpadded
     slotKeys: [...DEFAULT_KEYS],
     confirmClose: DEFAULT_CONFIRM_CLOSE,
     padding: DEFAULT_PADDING,
+    sort: DEFAULT_SORT,
     warnings: [],
   })
 })
@@ -41,6 +42,16 @@ test("reads padding and rejects values that are not a whole number in range", ()
   for (const padding of ["1", 1.5, -1, 4, null]) {
     const options = readOptions({ padding })
     expect(options.padding).toBe(DEFAULT_PADDING)
+    expect(options.warnings).toHaveLength(1)
+  }
+})
+
+test("reads sort and rejects unsupported values", () => {
+  expect(readOptions({ sort: "recent" }).sort).toBe("recent")
+  expect(readOptions({ sort: "manual" }).warnings).toEqual([])
+  for (const sort of [true, false, "tabs", "Recent", 0, null]) {
+    const options = readOptions({ sort })
+    expect(options.sort).toBe(DEFAULT_SORT)
     expect(options.warnings).toHaveLength(1)
   }
 })
