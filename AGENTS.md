@@ -21,10 +21,14 @@
 - `--options '{"confirmClose":true}'` passes plugin options and `--sidebar` crops the GIF to the tab bar.
   `--plugin <path>` records another checkout, such as a worktree of the base branch.
 - `--sessions sessions.json` replaces the sample tabs with a JSON array of `{ "project", "title" }`. Busy and
-  unread tabs need a model run, so show those states with `bun run preview`.
+  unread tabs need a model run, so show those states with `bun run preview`. Sessions are created in the
+  listed order, so the last one has the most recent activity.
 - `expect <text>` and `expect-not <text>` steps fail the recording when the screen does not match, so a GIF
   doubles as a test. Put them after every action, for example `close Two`, `expect Close tab`, `key Enter`,
-  `expect-not Two`.
+  `expect-not Two`. `expect-above <a> -> <b>` checks an order, such as `expect-above docs -> api`. A failed
+  step stops the steps but still writes the GIF, then exits with an error.
+- A check in a before-and-after recording should pass on the PR branch and fail on the base branch. A check
+  that passes on both, such as `expect New session`, proves nothing about the change.
 - Every PR that changes `src/` in a way the user can see or touch must include a GIF of the changed behaviour,
   before and after. A reviewer records them when the author did not: read the diff, script the new behaviour
   with `expect` checks, record it on the PR branch and on the base branch, and post the steps with the GIFs.
