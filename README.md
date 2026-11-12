@@ -34,6 +34,9 @@ with `alt+↑`, and searching all tabs with `/tabs`. It uses made-up repositorie
 - **Reorder groups** by dragging a header with the mouse, or select a group with `alt+N` and press
   `alt+↑` / `alt+↓`. The order is saved and the built-in tab order follows it.
 - **Reorder tabs** inside an expanded group by dragging them with the mouse.
+- **Custom groups.** Toggle them from the palette, then make your own groups: drag a tab onto another
+  group's header or rows, or move the current tab with `/group <name>`. Tabs without a group land in
+  `Ungrouped`; `/ungroup` moves the current tab back there. Repository grouping stays the default.
 - **Sort by recent activity** with the `sort` option: the group and the tab where you last sent a message move to
   the top.
 - **Close tabs** with the `✕` that appears on hover, or with a middle click.
@@ -79,9 +82,11 @@ opencode plugin remove github:igorovh/opencode-better-tabs#v0.5.0
 | `alt+↑` / `alt+↓` (group selected) | | Move the selected group |
 | `esc`, `alt+x`, `alt+esc` (group selected) | | Cancel the selection |
 | `<leader>p` | `/tabs` | Search all tabs |
+| | `/group <name>` | Move the current tab to a custom group (switches to custom groups) |
+| | `/ungroup` | Remove the current tab from its custom group, back to `Ungrouped` |
 | | `/close`, `/archive` | Close the current tab (the session is kept) |
 | `<leader>h` | `/tabs-hide` | Show or hide the tab bar |
-| | | Palette: group tabs now, toggle automatic grouping, collapse or expand all |
+| | | Palette: group tabs now, toggle automatic or custom grouping, move to a group, collapse or expand all |
 
 The key order is `1`–`9`, then `c g h i j k l m n o p q r s t u v w x y z`. `a b d e f` are skipped because
 OpenCode uses `alt+a/b/d/e/f` to edit the prompt. Groups and the tabs inside a group use the same order.

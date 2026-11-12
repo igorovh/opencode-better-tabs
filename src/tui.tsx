@@ -36,7 +36,14 @@ type State = {
   autoGroup: boolean
   restoreMode: TabsMode
   groupOrder: string[]
+  grouping: "repo" | "custom"
+  customGroups: Record<string, string>
 }
+
+// Tabs without a custom group land here, so no tab is ever left without a group.
+const UNGROUPED = "Ungrouped"
+const customKey = (name: string) => `custom:${name}`
+const cleanGroupName = (name: string | undefined) => (name ?? "").trim() || UNGROUPED
 
 function truncate(value: string, width: number) {
   if (width <= 0) return ""
@@ -70,7 +77,7 @@ function BetterTabs() {
   const ctx = usePlugin()
   const theme = () => ctx.theme
   const [state, update] = ctx.storage.store<State>("state", {
-    initial: { collapsed: {}, autoGroup: true, restoreMode: "auto", groupOrder: [] },
+    initial: { collapsed: {}, autoGroup: true, restoreMode: "auto", groupOrder: [], grouping: "repo", customGroups: {} },
   })
   const [memory, setMemory] = ctx.storage.memory<{ ids: string[] }>("memory", { initial: { ids: [] } })
 
@@ -171,11 +178,23 @@ function BetterTabs() {
   const [localOrder, setLocalOrder] = createSignal<string[]>()
   let orderWrites = 0
 
+  // Repository grouping is the default; custom grouping assigns tabs to your own named groups.
+  const grouping = () => state.grouping ?? "repo"
+  const customMap = () => state.customGroups ?? {}
+
+  const customInfo = (sessionID: string) => {
+    const name = cleanGroupName(customMap()[sessionID])
+    return { key: customKey(name), name, noGit: false }
+  }
+
   // Groups in their saved order, or by latest activity in recent mode; ties and new groups follow in tab order.
   const orderedGroups = createMemo(() => {
     const result = new Map<string, Group>()
+    const custom = grouping() === "custom"
     for (const tab of tabs()) {
-      const info = groupOf(tab.sessionID) ?? { key: UNKNOWN_GROUP, name: "…", noGit: false }
+      const info = custom
+        ? customInfo(tab.sessionID)
+        : (groupOf(tab.sessionID) ?? { key: UNKNOWN_GROUP, name: "…", noGit: false })
       const group = result.get(info.key) ?? { ...info, tabs: [] }
       group.tabs.push(tab)
       result.set(info.key, group)
@@ -193,7 +212,13 @@ function BetterTabs() {
 
   // Live reorder while a group header or a tab is being dragged.
   const [drag, setDrag] = createSignal<{ key: string; startY: number; moved: boolean; target: number }>()
-  const [tabDrag, setTabDrag] = createSignal<{ sessionID: string; startY: number; moved: boolean; target: number }>()
+  const [tabDrag, setTabDrag] = createSignal<{
+    sessionID: string
+    startY: number
+    moved: boolean
+    targetGroup: string
+    target: number
+  }>()
   const groups = createMemo(() => {
     let list = orderedGroups()
     const current = drag()
@@ -203,9 +228,15 @@ function BetterTabs() {
     }
     const dragged = tabDrag()
     if (!dragged?.moved) return list
+    // Only preview moves inside the tab's own group: showing it in another group would unmount
+    // its row mid-drag and the pointer would lose the drag. A cross-group target highlights its
+    // header instead (see GroupRow) and the tab moves there on release.
+    const source = list.find((group) => group.tabs.some((tab) => tab.sessionID === dragged.sessionID))
+    if (!source || source.key !== dragged.targetGroup) return list
     return list.map((group) => {
+      if (group.key !== source.key) return group
       const from = group.tabs.findIndex((tab) => tab.sessionID === dragged.sessionID)
-      return from === -1 ? group : { ...group, tabs: moveItem(group.tabs, from, dragged.target) }
+      return { ...group, tabs: moveItem(group.tabs, from, dragged.target) }
     })
   })
 
@@ -225,15 +256,29 @@ function BetterTabs() {
   }
 
   // Tabs keep their order in the host list, so a move puts the tab next to its new neighbour there.
-  const moveTab = (sessionID: string, to: number) => {
-    const ids = orderedGroups()
-      .find((group) => group.tabs.some((tab) => tab.sessionID === sessionID))
-      ?.tabs.map((tab) => tab.sessionID)
-    if (!ids) return
-    const next = moveItem(ids, ids.indexOf(sessionID), to)
-    const at = next.indexOf(sessionID)
+  // In custom mode the tab can also join another group, which updates its stored group first.
+  const moveTab = (sessionID: string, targetGroupKey: string, to: number) => {
+    const list = orderedGroups()
+    const source = list.find((group) => group.tabs.some((tab) => tab.sessionID === sessionID))
+    if (!source) return
+    const target = list.find((group) => group.key === targetGroupKey) ?? source
+    const crossGroup = grouping() === "custom" && target.key !== source.key
+    if (crossGroup) {
+      const name = target.name
+      void update((draft) => {
+        draft.customGroups ??= {}
+        if (name === UNGROUPED) delete draft.customGroups[sessionID]
+        else draft.customGroups[sessionID] = name
+        // The tab is hidden while its new group stays collapsed, so open it.
+        if (draft.collapsed[target.key]) delete draft.collapsed[target.key]
+      }).catch(fail)
+    }
+    const ids = target.tabs.map((tab) => tab.sessionID).filter((id) => id !== sessionID)
+    const at = Math.max(0, Math.min(to, ids.length))
+    const next = [...ids.slice(0, at), sessionID, ...ids.slice(at)]
+    const position = next.indexOf(sessionID)
     const host = ctx.ui.tabs.list().map((tab) => tab.sessionID).filter((id) => id !== sessionID)
-    const index = at > 0 ? host.indexOf(next[at - 1]!) + 1 : host.indexOf(next[1] ?? "")
+    const index = position > 0 ? host.indexOf(next[position - 1]!) + 1 : host.indexOf(next[1] ?? "")
     if (index >= 0) ctx.ui.tabs.move(sessionID, index)
   }
 
@@ -428,16 +473,40 @@ function BetterTabs() {
     }).length
 
   // Tabs move within their group, and the dragged tab takes the place of the row under the pointer.
+  // In custom mode a tab can also join another group by dropping it on that group's rows or header.
   const tabRows = new Map<string, BoxRenderable>()
   const tabDropTarget = (sessionID: string, y: number) => {
     const own = tabRows.get(sessionID)
-    const group = orderedGroups().find((item) => item.tabs.some((tab) => tab.sessionID === sessionID))
-    if (!own || own.isDestroyed || !group) return 0
-    return group.tabs.filter((tab) => {
+    const list = orderedGroups()
+    const source = list.find((item) => item.tabs.some((tab) => tab.sessionID === sessionID))
+    if (!own || own.isDestroyed || !source) return { groupKey: source?.key ?? "", index: 0 }
+    const custom = grouping() === "custom"
+    // The group whose header or rows hold the pointer wins; above all groups means the first,
+    // below all groups means the last.
+    let target = list[0] ?? source
+    for (const group of list) {
+      const header = headers.get(group.key)
+      const top = header && !header.isDestroyed ? header.screenY : undefined
+      const rows = group.tabs
+        .map((tab) => tabRows.get(tab.sessionID))
+        .filter((row): row is BoxRenderable => !!row && !row.isDestroyed)
+      const bottom = rows.length ? rows[rows.length - 1]!.screenY + rows[rows.length - 1]!.height - 1 : top
+      if (top === undefined) continue
+      if (y < top) break
+      target = group
+      if (bottom !== undefined && y <= bottom) break
+    }
+    if (!custom) target = source
+    // The dragged tab takes the place of the row under the pointer: rows above the pointer stay
+    // above it. Coming from above counts the row under the pointer too, so the tab lands after it.
+    const fromAbove = own.screenY < y
+    const index = target.tabs.filter((tab) => {
+      if (tab.sessionID === sessionID && target.key === source.key) return false
       const row = tabRows.get(tab.sessionID)
-      if (tab.sessionID === sessionID || !row || row.isDestroyed) return false
-      return row.screenY > own.screenY ? row.screenY <= y : row.screenY + row.height - 1 < y
+      if (!row || row.isDestroyed) return false
+      return fromAbove ? row.screenY <= y : row.screenY + row.height - 1 < y
     }).length
+    return { groupKey: target.key, index }
   }
 
   // Drag events go to whatever row the pointer first moved onto, so the whole bar handles them.
@@ -452,7 +521,10 @@ function BetterTabs() {
     const dragged = tabDrag()
     if (!dragged) return
     const moved = dragged.moved || event.y !== dragged.startY
-    if (moved) setTabDrag({ ...dragged, moved, target: tabDropTarget(dragged.sessionID, event.y) })
+    if (moved) {
+      const target = tabDropTarget(dragged.sessionID, event.y)
+      setTabDrag({ ...dragged, moved, targetGroup: target.groupKey, target: target.index })
+    }
   }
 
   const finishDrag = () => {
@@ -461,7 +533,7 @@ function BetterTabs() {
     setDrag(undefined)
     setTabDrag(undefined)
     if (current?.moved) moveGroup(current.key, current.target)
-    else if (dragged?.moved) moveTab(dragged.sessionID, dragged.target)
+    else if (dragged?.moved) moveTab(dragged.sessionID, dragged.targetGroup, dragged.target)
     else return false
     dropped = true
     setTimeout(() => (dropped = false))
@@ -472,6 +544,13 @@ function BetterTabs() {
     const id = () => `group:${props.group.key}`
     const selected = () => pending() === props.group.key
     const dragging = () => drag()?.key === props.group.key && drag()?.moved
+    // A tab dragged from another custom group lands here on release; highlight the header instead of
+    // moving the row, so the drag keeps its target while it is in flight.
+    const dropHint = () => {
+      const current = tabDrag()
+      if (!current?.moved || grouping() !== "custom" || current.targetGroup !== props.group.key) return false
+      return orderedGroups().find((group) => group.tabs.some((tab) => tab.sessionID === current.sessionID))?.key !== props.group.key
+    }
     const arrow = () => (props.collapsed && !selected() ? "▸" : "▾")
     // Group shortcuts give way to the tab shortcuts while a group is selected.
     const keys = () => (dragging() ? "⇅" : pending() === undefined ? slotLabel(props.position) : "")
@@ -493,7 +572,7 @@ function BetterTabs() {
         flexShrink={0}
         paddingTop={padding}
         backgroundColor={
-          dragging()
+          dragging() || dropHint()
             ? theme().background.action.primary.selected
             : selected()
               ? theme().background.raised.high
@@ -580,7 +659,7 @@ function BetterTabs() {
           pressedGroup = undefined
           if (event.button !== 0 || !draggable()) return
           event.stopPropagation()
-          setTabDrag({ sessionID: props.tab.sessionID, startY: event.y, moved: false, target: props.position })
+          setTabDrag({ sessionID: props.tab.sessionID, startY: event.y, moved: false, targetGroup: props.groupKey, target: props.position })
         }}
         onMouseUp={(event: MouseEvent) =>
           click(event, () => {
@@ -714,11 +793,70 @@ function BetterTabs() {
     ctx.ui.tabs.close(sessionID)
   }
 
+  // Custom groups ------------------------------------------------------------
+
+  // New tabs join the custom group of their repository name when first seen, so switching
+  // modes keeps every tab where it is until it is moved.
+  const seedCustomGroups = (draft: State) => {
+    draft.customGroups ??= {}
+    for (const tab of tabs()) {
+      if (draft.customGroups[tab.sessionID] !== undefined) continue
+      const name = groupOf(tab.sessionID)?.name
+      if (name) draft.customGroups[tab.sessionID] = name
+    }
+  }
+
+  const activeTab = () => tabs().find((tab) => tab.active)
+
+  const toggleGrouping = () => {
+    const next = grouping() === "custom" ? "repo" : "custom"
+    void update((draft) => {
+      draft.grouping = next
+      if (next === "custom") seedCustomGroups(draft)
+    })
+      .then(() => toast(next === "custom" ? "Custom tab groups on; repository grouping stays the default" : "Repository tab groups on"))
+      .catch(fail)
+  }
+
+  const setCustomGroup = async (input?: string) => {
+    let name = (input ?? "").trim()
+    if (!name) {
+      const answer = await ctx.ui.dialog.prompt({ title: "Move tab to group", placeholder: "Group name" })
+      if (answer === undefined) return
+      name = answer.trim()
+      if (!name) return toast("The group name is empty, so the tab stays where it is", "warning")
+    }
+    const current = activeTab()
+    if (!current) return toast("No tab is open", "warning")
+    const clean = cleanGroupName(name)
+    void update((draft) => {
+      draft.grouping = "custom"
+      seedCustomGroups(draft)
+      draft.customGroups ??= {}
+      if (clean === UNGROUPED) delete draft.customGroups[current.sessionID]
+      else draft.customGroups[current.sessionID] = clean
+      if (draft.collapsed[customKey(clean)]) delete draft.collapsed[customKey(clean)]
+    })
+      .then(() => toast(`Tab moved to ${clean}`))
+      .catch(fail)
+  }
+
   const setAllCollapsed = (collapsed: boolean) =>
     void update((draft) => {
       draft.collapsed = {}
       if (collapsed) for (const group of groups()) draft.collapsed[group.key] = true
     }).catch(fail)
+
+  const ungroupCurrent = () => {
+    if (grouping() !== "custom") return toast("Custom groups are off, so there is nothing to remove", "warning")
+    const current = activeTab()
+    if (!current) return toast("No tab is open", "warning")
+    void update((draft) => {
+      if (draft.customGroups) delete draft.customGroups[current.sessionID]
+    })
+      .then(() => toast(`Tab moved to ${UNGROUPED}`))
+      .catch(fail)
+  }
 
   const openPicker = async () => {
     const options = groups().flatMap((group, position) =>
@@ -779,10 +917,33 @@ function BetterTabs() {
       },
       {
         id: "better-tabs.group",
-        title: "Group tabs by repository",
+        title: "Group tabs now",
         group: "Better tabs",
         palette: true,
         run: applyGrouping,
+      },
+      {
+        id: "better-tabs.grouping",
+        title: "Toggle custom tab groups",
+        group: "Better tabs",
+        palette: true,
+        run: toggleGrouping,
+      },
+      {
+        id: "better-tabs.set-group",
+        title: "Move current tab to a custom group",
+        group: "Better tabs",
+        palette: true,
+        slash: { name: "group", arguments: true },
+        run: (input?: string) => void setCustomGroup(input).catch(fail),
+      },
+      {
+        id: "better-tabs.ungroup",
+        title: "Remove current tab from its custom group",
+        group: "Better tabs",
+        palette: true,
+        slash: { name: "ungroup" },
+        run: ungroupCurrent,
       },
       {
         id: "better-tabs.autogroup",
