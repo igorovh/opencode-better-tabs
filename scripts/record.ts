@@ -158,6 +158,7 @@ try {
   const page = await context.newPage()
   let ready = 0
   let crop = ""
+  let failure: Error | undefined
   try {
     const started = Date.now()
     await page.goto(`http://127.0.0.1:${ttydPort}`)
@@ -165,7 +166,13 @@ try {
     await sleep(1500)
     ready = (Date.now() - started) / 1000
     for (const step of steps) {
-      await runStep(page, step)
+      // A failed step still writes the GIF before exiting with an error, so a before-and-after shows it.
+      try {
+        await runStep(page, step)
+      } catch (error) {
+        failure = error as Error
+        break
+      }
       await sleep(700)
     }
     await sleep(1500)
@@ -192,6 +199,7 @@ try {
   )
   if (ffmpeg.status !== 0) throw new Error("ffmpeg failed")
   console.log(`Wrote ${values.out}`)
+  if (failure) throw failure
 } finally {
   stopAll()
   rmSync(work, { recursive: true, force: true, maxRetries: 5 })
