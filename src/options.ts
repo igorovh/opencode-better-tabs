@@ -6,9 +6,9 @@ export const DEFAULT_MODIFIER = "alt"
 export const DEFAULT_CONFIRM_CLOSE = false
 // Rows are one line of text; padding adds a blank line above and below it, opt-in.
 export const DEFAULT_PADDING = 0
-// Existing order stays the default; recent activity can order tabs alone or tabs and groups.
-export type RecentSort = false | "tabs" | "groups"
-export const DEFAULT_RECENT_SORT: RecentSort = false
+// "recent" puts the latest activity first; "manual" keeps the order set by dragging.
+export type Sort = "manual" | "recent"
+export const DEFAULT_SORT: Sort = "manual"
 const MAX_PADDING = 3
 const MODIFIERS = new Set(["alt", "ctrl", "shift", "meta", "super", "hyper"])
 
@@ -17,7 +17,7 @@ export type Options = {
   slotKeys: string[]
   confirmClose: boolean
   padding: number
-  recentSort: RecentSort
+  sort: Sort
   warnings: string[]
 }
 
@@ -46,10 +46,10 @@ export function readOptions(raw: Record<string, unknown> | undefined): Options {
       padding = raw.padding
     else warnings.push(`Ignoring padding ${JSON.stringify(raw.padding)}; it needs a whole number from 0 to ${MAX_PADDING}`)
   }
-  let recentSort = DEFAULT_RECENT_SORT
-  if (raw?.recentSort !== undefined) {
-    if (raw.recentSort === false || raw.recentSort === "tabs" || raw.recentSort === "groups") recentSort = raw.recentSort
-    else warnings.push(`Ignoring recentSort ${JSON.stringify(raw.recentSort)}; it needs false, "tabs" or "groups"`)
+  let sort = DEFAULT_SORT
+  if (raw?.sort !== undefined) {
+    if (raw.sort === "manual" || raw.sort === "recent") sort = raw.sort
+    else warnings.push(`Ignoring sort ${JSON.stringify(raw.sort)}; it needs "manual" or "recent"`)
   }
-  return { modifier, slotKeys, confirmClose, padding, recentSort, warnings }
+  return { modifier, slotKeys, confirmClose, padding, sort, warnings }
 }

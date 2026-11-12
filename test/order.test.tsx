@@ -10,8 +10,12 @@ const sessions: Session[] = ["alpha", "beta", "gamma"].flatMap((project) =>
   [1, 2].map((n) => ({ id: `${project}${n}`, projectID: project, directory: `/${project}`, title: `${project} ${n}` })),
 )
 const ids = sessions.map((session) => session.id)
-const recentActivity: Record<string, number> = { alpha1: 10, alpha2: 20, beta1: 60, beta2: 30, gamma1: 40, gamma2: 60 }
-const recentSessions = sessions.map((session) => ({ ...session, time: { updated: recentActivity[session.id]! } }))
+// Latest run start per session; gamma2 never ran, so its creation time counts. beta and gamma tie at 60.
+const lastRun: Record<string, number | undefined> = { alpha1: 10, alpha2: 20, beta1: 60, beta2: 30, gamma1: 60 }
+const recentSessions = sessions.map((session, index) => ({
+  ...session,
+  time: { created: index + 1, busy: lastRun[session.id] },
+}))
 
 let dir: string
 const running: Tui[] = []
@@ -25,6 +29,13 @@ const groupsInFrame = (frame: string) =>
   ["alpha", "beta", "gamma"].filter((name) => frame.includes(`▾ ${name}`)).sort(
     (left, right) => frame.indexOf(`▾ ${left}`) - frame.indexOf(`▾ ${right}`),
   )
+// Moves one row at a time, like a real pointer, so live reordering sees every step.
+const drag = async (tui: Tui, from: number, to: number) => {
+  await tui.mouse.pressDown(5, from)
+  for (let y = from - 1; y >= Math.min(to, from - 1); y--) await tui.mouse.emitMouseEvent("drag", 5, y)
+  if (to > from) for (let y = from + 1; y <= to; y++) await tui.mouse.emitMouseEvent("drag", 5, y)
+  await tui.mouse.release(5, to)
+}
 const rowOf = (frame: string, text: string) => frame.split("\n").findIndex((line) => line.includes(text))
 const tabsInFrame = (frame: string) =>
   sessions
@@ -50,22 +61,17 @@ for (const [name, plugin] of [
 ] as const) {
   describe(name, () => {
     const start = async ({
-      recentSort,
+      sort,
       sessionList = sessions,
       ...options
     }: {
       syncDelay?: number
       writeDelay?: number
-      recentSort?: false | "tabs" | "groups"
+      sort?: "manual" | "recent"
       sessionList?: Session[]
+      tabState?: Record<string, Record<string, unknown>>
     } = {}) => {
-      const tui = await startTui({
-        stateDir: dir,
-        sessions: sessionList,
-        plugin,
-        options: recentSort === undefined ? {} : { recentSort },
-        ...options,
-      })
+      const tui = await startTui({ stateDir: dir, sessions: sessionList, plugin, options: sort ? { sort } : {}, ...options })
       running.push(tui)
       return tui
     }
@@ -128,28 +134,75 @@ for (const [name, plugin] of [
       expect(a.hostOrder()).toEqual(["gamma1", "gamma2", "alpha1", "alpha2", "beta1", "beta2"])
     })
 
-    test("recentSort tabs orders activity within each group only", async () => {
-      init()
-      const tui = await start({ recentSort: "tabs", sessionList: recentSessions, syncDelay: 5 })
-      await settle(tui)
-      const frame = await tui.frame()
-      const expected = ["alpha2", "alpha1", "beta1", "beta2", "gamma2", "gamma1"]
-
-      expect(groupsInFrame(frame)).toEqual(["alpha", "beta", "gamma"])
-      expect(tabsInFrame(frame)).toEqual(expected)
-      expect(tui.hostOrder()).toEqual(expected)
-    })
-
-    test("recentSort groups orders groups and uses saved order for ties", async () => {
+    test("recent sort puts the latest run first and keeps the saved order for ties", async () => {
       init({ collapsed: {}, autoGroup: true, restoreMode: "auto", groupOrder: ["gamma", "alpha", "beta"] })
-      const tui = await start({ recentSort: "groups", sessionList: recentSessions, syncDelay: 5 })
+      const tui = await start({ sort: "recent", sessionList: recentSessions, syncDelay: 5 })
       await settle(tui)
       const frame = await tui.frame()
-      const expected = ["gamma2", "gamma1", "beta1", "beta2", "alpha2", "alpha1"]
+      const expected = ["gamma1", "gamma2", "beta1", "beta2", "alpha2", "alpha1"]
 
       expect(groupsInFrame(frame)).toEqual(["gamma", "beta", "alpha"])
       expect(tabsInFrame(frame)).toEqual(expected)
       expect(tui.hostOrder()).toEqual(expected)
+    })
+
+    test("recent sort ignores dragging and alt+arrows", async () => {
+      init()
+      const tui = await start({ sort: "recent", sessionList: recentSessions, syncDelay: 5 })
+      await settle(tui)
+      const before = await tui.frame()
+      expect(groupsInFrame(before)).toEqual(["beta", "gamma", "alpha"])
+
+      await drag(tui, rowOf(before, "▾ alpha"), rowOf(before, "▾ beta"))
+      await drag(tui, rowOf(before, "gamma 2"), rowOf(before, "gamma 1"))
+      tui.run("alt+3")
+      tui.run("alt+up")
+      await settle(tui)
+      expect(tabsInFrame(await tui.frame())).toEqual(tabsInFrame(before))
+      expect(tui.toasts.at(-1)).toContain('set sort to "manual"')
+    })
+
+    for (const [name, from, to, expected] of [
+      ["up onto the tab above", "beta 2", "beta 1", ["beta2", "beta1"]],
+      ["down onto the tab below", "beta 1", "beta 2", ["beta2", "beta1"]],
+      ["onto itself", "beta 1", "beta 1", ["beta1", "beta2"]],
+      ["past its group", "beta 1", "gamma 2", ["beta2", "beta1"]],
+    ] as const) {
+      test(`dragging a tab ${name}`, async () => {
+        init()
+        const tui = await start({ syncDelay: 5 })
+        await settle(tui)
+        const frame = await tui.frame()
+        await drag(tui, rowOf(frame, from), rowOf(frame, to))
+        await settle(tui)
+        const order = ["alpha1", "alpha2", ...expected, "gamma1", "gamma2"]
+        expect(tabsInFrame(await tui.frame())).toEqual(order)
+        expect(tui.hostOrder()).toEqual(order)
+      })
+    }
+
+    test("a dragged tab keeps its place when grouping is off", async () => {
+      init({ collapsed: {}, autoGroup: false, restoreMode: "auto", groupOrder: [] })
+      writeFileSync(
+        path.join(dir, "tabs.json"),
+        JSON.stringify({ global: { tabs: ["alpha1", "beta1", "alpha2"].map((sessionID) => ({ sessionID })), unread: {} }, cwd: {} }),
+      )
+      const tui = await start({ syncDelay: 5 })
+      await settle(tui)
+      const frame = await tui.frame()
+      await drag(tui, rowOf(frame, "alpha 2"), rowOf(frame, "alpha 1"))
+      await settle(tui)
+      expect(tui.hostOrder()).toEqual(["alpha2", "alpha1", "beta1"])
+    })
+
+    test("tabs of a collapsed group cannot be dragged", async () => {
+      init({ collapsed: { beta: true }, autoGroup: true, restoreMode: "auto", groupOrder: [] })
+      const tui = await start({ syncDelay: 5, tabState: { beta2: { active: true } } })
+      await settle(tui)
+      const frame = await tui.frame()
+      await drag(tui, rowOf(frame, "beta 2"), rowOf(frame, "▾ alpha"))
+      await settle(tui)
+      expect(tui.hostOrder()).toEqual(ids)
     })
 
     for (const [target, expected] of [
@@ -164,10 +217,7 @@ for (const [name, plugin] of [
         const frame = await tui.frame()
         const from = rowOf(frame, "▾ gamma")
         const to = target === "alpha header" ? rowOf(frame, "▾ alpha") : target === "alpha tab" ? rowOf(frame, "alpha 1") : 28
-        await tui.mouse.pressDown(5, from)
-        for (let y = from - 1; y >= Math.min(to, from - 1); y--) await tui.mouse.emitMouseEvent("drag", 5, y)
-        if (to > from) for (let y = from + 1; y <= to; y++) await tui.mouse.emitMouseEvent("drag", 5, y)
-        await tui.mouse.release(5, to)
+        await drag(tui, from, to)
         await settle(tui)
         expect(groupsInFrame(await tui.frame())).toEqual([...expected])
         // Releasing a drag must not also toggle the group under the pointer.

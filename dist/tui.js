@@ -1417,7 +1417,7 @@ var DEFAULT_KEYS = "123456789cghijklmnopqrstuvwxyz";
 var DEFAULT_MODIFIER = "alt";
 var DEFAULT_CONFIRM_CLOSE = false;
 var DEFAULT_PADDING = 0;
-var DEFAULT_RECENT_SORT = false;
+var DEFAULT_SORT = "manual";
 var MAX_PADDING = 3;
 var MODIFIERS = new Set(["alt", "ctrl", "shift", "meta", "super", "hyper"]);
 function readOptions(raw) {
@@ -1452,14 +1452,14 @@ function readOptions(raw) {
     else
       warnings.push(`Ignoring padding ${JSON.stringify(raw.padding)}; it needs a whole number from 0 to ${MAX_PADDING}`);
   }
-  let recentSort = DEFAULT_RECENT_SORT;
-  if (raw?.recentSort !== undefined) {
-    if (raw.recentSort === false || raw.recentSort === "tabs" || raw.recentSort === "groups")
-      recentSort = raw.recentSort;
+  let sort = DEFAULT_SORT;
+  if (raw?.sort !== undefined) {
+    if (raw.sort === "manual" || raw.sort === "recent")
+      sort = raw.sort;
     else
-      warnings.push(`Ignoring recentSort ${JSON.stringify(raw.recentSort)}; it needs false, "tabs" or "groups"`);
+      warnings.push(`Ignoring sort ${JSON.stringify(raw.sort)}; it needs "manual" or "recent"`);
   }
-  return { modifier, slotKeys, confirmClose, padding, recentSort, warnings };
+  return { modifier, slotKeys, confirmClose, padding, sort, warnings };
 }
 
 var NARROW_BREAKPOINT = 12;
@@ -1529,9 +1529,9 @@ function BetterTabs() {
     modifier,
     slotKeys,
     confirmClose,
-    padding,
-    recentSort
+    padding
   } = options;
+  const recent = options.sort === "recent";
   const tabs = createMemo(() => {
     if (ctx.ui.tabs.enabled())
       return ctx.ui.tabs.list();
@@ -1615,7 +1615,10 @@ function BetterTabs() {
     };
   };
   const titleOf = (tab) => ctx.data.session.get(tab.sessionID)?.title ?? tab.title ?? "Untitled session";
-  const activityOf = (sessionID) => ctx.data.session.get(sessionID)?.time?.updated ?? 0;
+  const activityOf = (sessionID) => {
+    const time = ctx.data.session.get(sessionID)?.time;
+    return time?.busy ?? time?.created ?? 0;
+  };
   const groupActivity = (group) => Math.max(0, ...group.tabs.map((tab) => activityOf(tab.sessionID)));
   const [localOrder, setLocalOrder] = createSignal();
   let orderWrites = 0;
@@ -1640,27 +1643,31 @@ function BetterTabs() {
       return index === -1 ? order.length : index;
     };
     const list = [...result.values()];
-    if (recentSort) {
+    if (recent)
       for (const group of list)
         group.tabs.sort((left, right) => activityOf(right.sessionID) - activityOf(left.sessionID));
-    }
-    return list.sort((left, right) => {
-      if (recentSort === "groups") {
-        const recent = groupActivity(right) - groupActivity(left);
-        if (recent !== 0)
-          return recent;
-      }
-      return rank(left.key) - rank(right.key);
-    });
+    return list.sort((left, right) => recent && groupActivity(right) - groupActivity(left) || rank(left.key) - rank(right.key));
   });
   const [drag, setDrag] = createSignal();
+  const [tabDrag, setTabDrag] = createSignal();
   const groups = createMemo(() => {
-    const list = orderedGroups();
+    let list = orderedGroups();
     const current = drag();
-    if (!current?.moved)
+    if (current?.moved) {
+      const from = list.findIndex((group) => group.key === current.key);
+      if (from !== -1)
+        list = moveItem(list, from, current.target);
+    }
+    const dragged = tabDrag();
+    if (!dragged?.moved)
       return list;
-    const from = list.findIndex((group) => group.key === current.key);
-    return from === -1 ? list : moveItem(list, from, current.target);
+    return list.map((group) => {
+      const from = group.tabs.findIndex((tab) => tab.sessionID === dragged.sessionID);
+      return from === -1 ? group : {
+        ...group,
+        tabs: moveItem(group.tabs, from, dragged.target)
+      };
+    });
   });
   const moveGroup = (key, to) => {
     const list = orderedGroups().map((group) => group.key);
@@ -1675,6 +1682,17 @@ function BetterTabs() {
       if (write === orderWrites)
         setLocalOrder(undefined);
     });
+  };
+  const moveTab = (sessionID, to) => {
+    const ids = orderedGroups().find((group) => group.tabs.some((tab) => tab.sessionID === sessionID))?.tabs.map((tab) => tab.sessionID);
+    if (!ids)
+      return;
+    const next = moveItem(ids, ids.indexOf(sessionID), to);
+    const at = next.indexOf(sessionID);
+    const host = ctx.ui.tabs.list().map((tab) => tab.sessionID).filter((id) => id !== sessionID);
+    const index = at > 0 ? host.indexOf(next[at - 1]) + 1 : host.indexOf(next[1] ?? "");
+    if (index >= 0)
+      ctx.ui.tabs.move(sessionID, index);
   };
   const applyGrouping = () => {
     if (!ctx.ui.tabs.enabled())
@@ -1737,6 +1755,8 @@ function BetterTabs() {
     const selected = pending();
     if (selected === undefined)
       return;
+    if (recent)
+      return toast('Groups follow recent activity; set sort to "manual" to move them');
     const from = orderedGroups().findIndex((group) => group.key === selected);
     if (from === -1)
       return;
@@ -1861,6 +1881,7 @@ function BetterTabs() {
   }).catch(fail);
   const [hovered, setHovered] = createSignal();
   let dropped = false;
+  let pressedGroup;
   const click = (event, run) => {
     event.stopPropagation();
     if (!dropped)
@@ -1876,26 +1897,55 @@ function BetterTabs() {
     const header = headers.get(group.key);
     return !!header && !header.isDestroyed && header.screenY + (header.height - 1) / 2 < y;
   }).length;
+  const tabRows = new Map;
+  const tabDropTarget = (sessionID, y) => {
+    const own = tabRows.get(sessionID);
+    const group = orderedGroups().find((item) => item.tabs.some((tab) => tab.sessionID === sessionID));
+    if (!own || own.isDestroyed || !group)
+      return 0;
+    return group.tabs.filter((tab) => {
+      const row = tabRows.get(tab.sessionID);
+      if (tab.sessionID === sessionID || !row || row.isDestroyed)
+        return false;
+      return row.screenY > own.screenY ? row.screenY <= y : row.screenY + row.height - 1 < y;
+    }).length;
+  };
   const dragMove = (event) => {
     const current = drag();
-    if (!current)
+    if (current) {
+      if (recent)
+        return;
+      const moved = current.moved || event.y !== current.startY;
+      if (moved)
+        setDrag({
+          ...current,
+          moved,
+          target: dropTarget(current.key, event.y)
+        });
       return;
-    const moved = current.moved || event.y !== current.startY;
+    }
+    const dragged = tabDrag();
+    if (!dragged)
+      return;
+    const moved = dragged.moved || event.y !== dragged.startY;
     if (moved)
-      setDrag({
-        ...current,
+      setTabDrag({
+        ...dragged,
         moved,
-        target: dropTarget(current.key, event.y)
+        target: tabDropTarget(dragged.sessionID, event.y)
       });
   };
   const finishDrag = () => {
     const current = drag();
-    if (!current)
-      return false;
+    const dragged = tabDrag();
     setDrag(undefined);
-    if (!current.moved)
+    setTabDrag(undefined);
+    if (current?.moved)
+      moveGroup(current.key, current.target);
+    else if (dragged?.moved)
+      moveTab(dragged.sessionID, dragged.target);
+    else
       return false;
-    moveGroup(current.key, current.target);
     dropped = true;
     setTimeout(() => dropped = false);
     return true;
@@ -1930,6 +1980,7 @@ function BetterTabs() {
         if (event.button !== 0)
           return;
         event.stopPropagation();
+        pressedGroup = props.group.key;
         setDrag({
           key: props.group.key,
           startY: event.y,
@@ -1938,7 +1989,8 @@ function BetterTabs() {
         });
       });
       _$setProp(_el$, "onMouseUp", (event) => click(event, () => {
-        if (!finishDrag() && event.button === 0)
+        const over = !!header && event.y >= header.screenY && event.y < header.screenY + header.height;
+        if (!finishDrag() && event.button === 0 && pressedGroup === props.group.key && over)
           toggleGroup(props.group.key);
       }));
       _$insert(_el$, _$createComponent(Show, {
@@ -2019,7 +2071,16 @@ function BetterTabs() {
   function TabRow(props) {
     const id = () => `tab:${props.tab.sessionID}`;
     const armed = () => pending() === props.groupKey;
-    const dragged = () => !!drag()?.moved && props.groupKey === drag()?.key;
+    const dragged = () => !!drag()?.moved && props.groupKey === drag()?.key || !!tabDrag()?.moved && tabDrag()?.sessionID === props.tab.sessionID;
+    const draggable = () => {
+      const group = groupByKey(props.groupKey);
+      return !recent && !!group && visibleTabIDs(group).length === group.tabs.length;
+    };
+    let row;
+    onCleanup(() => {
+      if (tabRows.get(props.tab.sessionID) === row)
+        tabRows.delete(props.tab.sessionID);
+    });
     const keys = () => armed() ? slotLabel(props.position) : "";
     const showKeys = () => keys().length > 0 && innerWidth() - 5 - keys().length - 2 >= 6;
     const titleWidth = () => innerWidth() - 5 - (showKeys() ? keys().length + 2 : 0);
@@ -2028,13 +2089,28 @@ function BetterTabs() {
       var _el$1 = _$createElement("box"), _el$10 = _$createElement("text"), _el$11 = _$createElement("text");
       _$insertNode(_el$1, _el$10);
       _$insertNode(_el$1, _el$11);
+      _$use((element) => tabRows.set(props.tab.sessionID, row = element), _el$1);
       _$setProp(_el$1, "flexDirection", "row");
       _$setProp(_el$1, "height", rowHeight);
       _$setProp(_el$1, "flexShrink", 0);
       _$setProp(_el$1, "paddingTop", padding);
       _$setProp(_el$1, "onMouseOver", () => setHovered(id()));
       _$setProp(_el$1, "onMouseOut", () => setHovered(undefined));
+      _$setProp(_el$1, "onMouseDown", (event) => {
+        pressedGroup = undefined;
+        if (event.button !== 0 || !draggable())
+          return;
+        event.stopPropagation();
+        setTabDrag({
+          sessionID: props.tab.sessionID,
+          startY: event.y,
+          moved: false,
+          target: props.position
+        });
+      });
       _$setProp(_el$1, "onMouseUp", (event) => click(event, () => {
+        if (finishDrag())
+          return;
         if (event.button === 1)
           requestClose(props.tab.sessionID).catch(fail);
         else if (event.button === 0)
@@ -2390,6 +2466,7 @@ function BetterTabs() {
         var _el$24 = _$createElement("box"), _el$25 = _$createElement("scrollbox"), _el$26 = _$createElement("box"), _el$27 = _$createElement("box");
         _$insertNode(_el$24, _el$25);
         _$setProp(_el$24, "flexDirection", "column");
+        _$setProp(_el$24, "onMouseDown", () => pressedGroup = undefined);
         _$setProp(_el$24, "onMouseDrag", dragMove);
         _$setProp(_el$24, "onMouseDragEnd", () => finishDrag());
         _$setProp(_el$24, "onMouseUp", () => finishDrag());

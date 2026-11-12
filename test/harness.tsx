@@ -94,7 +94,7 @@ function moveSessionTab<T extends { sessionID: string }>(tabs: T[], sessionID: s
   return next
 }
 
-export type Session = { id: string; projectID: string; directory: string; title: string; time?: { updated: number } }
+export type Session = { id: string; projectID: string; directory: string; title: string; time?: { created: number; busy?: number } }
 
 const theme: any = new Proxy(RGBA.fromInts(128, 128, 128, 255), {
   get: (target, property) => (property in target ? (target as any)[property] : theme),
