@@ -31,7 +31,8 @@ const STEPS_HELP = `Steps, one per --step or per line of --steps <file>:
   key <keys>                press keys, such as alt+2 or ctrl+p
   type <text>               type text, such as /close (add "key Enter" to run it)
   expect <text>             fail unless <text> shows within 5 s, such as a dialog title
-  expect-not <text>         fail unless <text> is gone within 5 s, such as a closed tab`
+  expect-not <text>         fail unless <text> is gone within 5 s, such as a closed tab
+  expect-above <a> -> <b>   fail unless the row showing <a> is above the one showing <b>, to check an order`
 
 const opencodeBin = process.env.OPENCODE_BIN ?? "opencode"
 const ttydBin = process.env.TTYD_BIN ?? "ttyd"
@@ -215,14 +216,19 @@ async function screenLines(page: Page): Promise<string[]> {
   })
 }
 
-async function cellOf(page: Page, text: string, which: "start" | "middle" | "close" = "middle") {
-  const lines = await screenLines(page)
-  // Titles also show in the main pane; the tab bar starts at column 0, so take the leftmost match.
+// Titles also show in the main pane; the tab bar starts at column 0, so take the leftmost match.
+function rowOf(lines: string[], text: string): number {
   let row = -1
   lines.forEach((line, index) => {
     const at = line.indexOf(text)
     if (at !== -1 && (row === -1 || at < lines[row]!.indexOf(text))) row = index
   })
+  return row
+}
+
+async function cellOf(page: Page, text: string, which: "start" | "middle" | "close" = "middle") {
+  const lines = await screenLines(page)
+  const row = rowOf(lines, text)
   if (row === -1) throw new Error(`No row shows "${text}"`)
   const line = lines[row]!
   let col = line.indexOf(text) + (which === "middle" ? Math.floor(text.length / 2) : 0)
@@ -291,6 +297,20 @@ async function runStep(page: Page, step: string) {
       }
       const screen = (await screenLines(page)).map((line) => line.trimEnd()).join("\n")
       throw new Error(`Step "${step}" failed: the screen ${want ? "never showed" : "still shows"} "${arg}"\n${screen}`)
+    }
+    case "expect-above": {
+      const [upper, lower] = arg.split("->").map((part) => part.trim())
+      if (!upper || !lower) throw new Error(`Step "${step}" needs two texts: <text> -> <text>`)
+      const end = Date.now() + 5000
+      while (Date.now() < end) {
+        const lines = await screenLines(page)
+        const above = rowOf(lines, upper)
+        const below = rowOf(lines, lower)
+        if (above !== -1 && below !== -1 && above < below) return
+        await sleep(200)
+      }
+      const screen = (await screenLines(page)).map((line) => line.trimEnd()).join("\n")
+      throw new Error(`Step "${step}" failed: "${upper}" is not above "${lower}"\n${screen}`)
     }
     default:
       throw new Error(`Unknown step "${step}"\n${STEPS_HELP}`)
