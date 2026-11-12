@@ -209,11 +209,11 @@ export async function startTui(options: {
     throw new Error(`No command bound to ${bind}`)
   }
 
-  const command = (id: string) => {
+  const command = (id: string, input?: string) => {
     for (const factory of layers.toReversed()) {
       const layer = factory()
       const found = layer.commands.find((item: any) => item.id === id)
-      if (found) return found.run()
+      if (found) return found.run(input)
     }
     throw new Error(`No command ${id}`)
   }
