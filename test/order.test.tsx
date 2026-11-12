@@ -10,6 +10,8 @@ const sessions: Session[] = ["alpha", "beta", "gamma"].flatMap((project) =>
   [1, 2].map((n) => ({ id: `${project}${n}`, projectID: project, directory: `/${project}`, title: `${project} ${n}` })),
 )
 const ids = sessions.map((session) => session.id)
+const recentActivity: Record<string, number> = { alpha1: 10, alpha2: 20, beta1: 60, beta2: 30, gamma1: 40, gamma2: 60 }
+const recentSessions = sessions.map((session) => ({ ...session, time: { updated: recentActivity[session.id]! } }))
 
 let dir: string
 const running: Tui[] = []
@@ -24,6 +26,11 @@ const groupsInFrame = (frame: string) =>
     (left, right) => frame.indexOf(`▾ ${left}`) - frame.indexOf(`▾ ${right}`),
   )
 const rowOf = (frame: string, text: string) => frame.split("\n").findIndex((line) => line.includes(text))
+const tabsInFrame = (frame: string) =>
+  sessions
+    .filter((session) => frame.includes(session.title))
+    .sort((left, right) => frame.indexOf(left.title) - frame.indexOf(right.title))
+    .map((session) => session.id)
 
 afterEach(async () => {
   while (running.length) await running.pop()!.stop()
@@ -42,8 +49,23 @@ for (const [name, plugin] of [
   ["dist", compiledPlugin],
 ] as const) {
   describe(name, () => {
-    const start = async (options: { syncDelay?: number; writeDelay?: number } = {}) => {
-      const tui = await startTui({ stateDir: dir, sessions, plugin, ...options })
+    const start = async ({
+      recentSort,
+      sessionList = sessions,
+      ...options
+    }: {
+      syncDelay?: number
+      writeDelay?: number
+      recentSort?: false | "tabs" | "groups"
+      sessionList?: Session[]
+    } = {}) => {
+      const tui = await startTui({
+        stateDir: dir,
+        sessions: sessionList,
+        plugin,
+        options: recentSort === undefined ? {} : { recentSort },
+        ...options,
+      })
       running.push(tui)
       return tui
     }
@@ -104,6 +126,30 @@ for (const [name, plugin] of [
       expect(groupsInFrame(await a.frame())).toEqual(["gamma", "alpha", "beta"])
       expect(groupsInFrame(await b.frame())).toEqual(["gamma", "alpha", "beta"])
       expect(a.hostOrder()).toEqual(["gamma1", "gamma2", "alpha1", "alpha2", "beta1", "beta2"])
+    })
+
+    test("recentSort tabs orders activity within each group only", async () => {
+      init()
+      const tui = await start({ recentSort: "tabs", sessionList: recentSessions, syncDelay: 5 })
+      await settle(tui)
+      const frame = await tui.frame()
+      const expected = ["alpha2", "alpha1", "beta1", "beta2", "gamma2", "gamma1"]
+
+      expect(groupsInFrame(frame)).toEqual(["alpha", "beta", "gamma"])
+      expect(tabsInFrame(frame)).toEqual(expected)
+      expect(tui.hostOrder()).toEqual(expected)
+    })
+
+    test("recentSort groups orders groups and uses saved order for ties", async () => {
+      init({ collapsed: {}, autoGroup: true, restoreMode: "auto", groupOrder: ["gamma", "alpha", "beta"] })
+      const tui = await start({ recentSort: "groups", sessionList: recentSessions, syncDelay: 5 })
+      await settle(tui)
+      const frame = await tui.frame()
+      const expected = ["gamma2", "gamma1", "beta1", "beta2", "alpha2", "alpha1"]
+
+      expect(groupsInFrame(frame)).toEqual(["gamma", "beta", "alpha"])
+      expect(tabsInFrame(frame)).toEqual(expected)
+      expect(tui.hostOrder()).toEqual(expected)
     })
 
     for (const [target, expected] of [

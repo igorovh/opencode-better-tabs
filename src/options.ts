@@ -6,10 +6,20 @@ export const DEFAULT_MODIFIER = "alt"
 export const DEFAULT_CONFIRM_CLOSE = false
 // Rows are one line of text; padding adds a blank line above and below it, opt-in.
 export const DEFAULT_PADDING = 0
+// Existing order stays the default; recent activity can order tabs alone or tabs and groups.
+export type RecentSort = false | "tabs" | "groups"
+export const DEFAULT_RECENT_SORT: RecentSort = false
 const MAX_PADDING = 3
 const MODIFIERS = new Set(["alt", "ctrl", "shift", "meta", "super", "hyper"])
 
-export type Options = { modifier: string; slotKeys: string[]; confirmClose: boolean; padding: number; warnings: string[] }
+export type Options = {
+  modifier: string
+  slotKeys: string[]
+  confirmClose: boolean
+  padding: number
+  recentSort: RecentSort
+  warnings: string[]
+}
 
 export function readOptions(raw: Record<string, unknown> | undefined): Options {
   const warnings: string[] = []
@@ -36,5 +46,10 @@ export function readOptions(raw: Record<string, unknown> | undefined): Options {
       padding = raw.padding
     else warnings.push(`Ignoring padding ${JSON.stringify(raw.padding)}; it needs a whole number from 0 to ${MAX_PADDING}`)
   }
-  return { modifier, slotKeys, confirmClose, padding, warnings }
+  let recentSort = DEFAULT_RECENT_SORT
+  if (raw?.recentSort !== undefined) {
+    if (raw.recentSort === false || raw.recentSort === "tabs" || raw.recentSort === "groups") recentSort = raw.recentSort
+    else warnings.push(`Ignoring recentSort ${JSON.stringify(raw.recentSort)}; it needs false, "tabs" or "groups"`)
+  }
+  return { modifier, slotKeys, confirmClose, padding, recentSort, warnings }
 }

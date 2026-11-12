@@ -1417,6 +1417,7 @@ var DEFAULT_KEYS = "123456789cghijklmnopqrstuvwxyz";
 var DEFAULT_MODIFIER = "alt";
 var DEFAULT_CONFIRM_CLOSE = false;
 var DEFAULT_PADDING = 0;
+var DEFAULT_RECENT_SORT = false;
 var MAX_PADDING = 3;
 var MODIFIERS = new Set(["alt", "ctrl", "shift", "meta", "super", "hyper"]);
 function readOptions(raw) {
@@ -1451,7 +1452,14 @@ function readOptions(raw) {
     else
       warnings.push(`Ignoring padding ${JSON.stringify(raw.padding)}; it needs a whole number from 0 to ${MAX_PADDING}`);
   }
-  return { modifier, slotKeys, confirmClose, padding, warnings };
+  let recentSort = DEFAULT_RECENT_SORT;
+  if (raw?.recentSort !== undefined) {
+    if (raw.recentSort === false || raw.recentSort === "tabs" || raw.recentSort === "groups")
+      recentSort = raw.recentSort;
+    else
+      warnings.push(`Ignoring recentSort ${JSON.stringify(raw.recentSort)}; it needs false, "tabs" or "groups"`);
+  }
+  return { modifier, slotKeys, confirmClose, padding, recentSort, warnings };
 }
 
 var NARROW_BREAKPOINT = 12;
@@ -1514,6 +1522,16 @@ function BetterTabs() {
     variant
   });
   const fail = (error) => toast(error instanceof Error ? error.message : String(error), "error");
+  const options = readOptions(ctx.options);
+  for (const warning of options.warnings)
+    toast(warning, "warning");
+  const {
+    modifier,
+    slotKeys,
+    confirmClose,
+    padding,
+    recentSort
+  } = options;
   const tabs = createMemo(() => {
     if (ctx.ui.tabs.enabled())
       return ctx.ui.tabs.list();
@@ -1597,6 +1615,8 @@ function BetterTabs() {
     };
   };
   const titleOf = (tab) => ctx.data.session.get(tab.sessionID)?.title ?? tab.title ?? "Untitled session";
+  const activityOf = (sessionID) => ctx.data.session.get(sessionID)?.time?.updated ?? 0;
+  const groupActivity = (group) => Math.max(0, ...group.tabs.map((tab) => activityOf(tab.sessionID)));
   const [localOrder, setLocalOrder] = createSignal();
   let orderWrites = 0;
   const orderedGroups = createMemo(() => {
@@ -1619,7 +1639,19 @@ function BetterTabs() {
       const index = order.indexOf(key);
       return index === -1 ? order.length : index;
     };
-    return [...result.values()].sort((left, right) => rank(left.key) - rank(right.key));
+    const list = [...result.values()];
+    if (recentSort) {
+      for (const group of list)
+        group.tabs.sort((left, right) => activityOf(right.sessionID) - activityOf(left.sessionID));
+    }
+    return list.sort((left, right) => {
+      if (recentSort === "groups") {
+        const recent = groupActivity(right) - groupActivity(left);
+        if (recent !== 0)
+          return recent;
+      }
+      return rank(left.key) - rank(right.key);
+    });
   });
   const [drag, setDrag] = createSignal();
   const groups = createMemo(() => {
@@ -1673,15 +1705,6 @@ function BetterTabs() {
         sessionID
       });
   };
-  const options = readOptions(ctx.options);
-  for (const warning of options.warnings)
-    toast(warning, "warning");
-  const {
-    modifier,
-    slotKeys,
-    confirmClose,
-    padding
-  } = options;
   const rowHeight = 1 + padding * 2;
   const [pending, setPending] = createSignal();
   let chordTimer;

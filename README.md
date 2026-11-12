@@ -110,6 +110,9 @@ Add an entry to `cli.json` whose `package` is exactly the same string as in `ope
 - `padding`: blank lines above and below the label of every row (tab, group header and `+ New session`), from `0`
   to `3`. Default `0`, so rows stay one line tall. Set it to `1` to give the hover and active backgrounds some
   air: the row grows to `1 + padding × 2` lines. Terminal rows are one cell tall, so a gap is a whole blank line.
+- `recentSort`: set it to `"tabs"` to put recently active tabs first within each group. Set it to `"groups"` to also
+  put groups with recent activity first. The default `false` keeps the current order. Equal timestamps keep the host
+  tab order and saved group order.
 
 To change or turn off a command shortcut, set its command ID under `keybinds` in the same `cli.json`. Use `"none"`
 to turn it off:

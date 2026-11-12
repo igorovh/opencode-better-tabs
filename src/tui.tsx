@@ -78,6 +78,10 @@ function BetterTabs() {
     ctx.ui.toast.show({ title: "Better tabs", message, variant })
   const fail = (error: unknown) => toast(error instanceof Error ? error.message : String(error), "error")
 
+  const options = readOptions(ctx.options)
+  for (const warning of options.warnings) toast(warning, "warning")
+  const { modifier, slotKeys, confirmClose, padding, recentSort } = options
+
   // Tabs, sessions and groups ------------------------------------------------------------------
 
   // While tabs are hidden the host no longer tracks them, so fall back to the last known list.
@@ -154,11 +158,14 @@ function BetterTabs() {
   const titleOf = (tab: Pick<Tab, "sessionID" | "title">) =>
     ctx.data.session.get(tab.sessionID)?.title ?? tab.title ?? "Untitled session"
 
+  const activityOf = (sessionID: string) => ctx.data.session.get(sessionID)?.time?.updated ?? 0
+  const groupActivity = (group: Group) => Math.max(0, ...group.tabs.map((tab) => activityOf(tab.sessionID)))
+
   // Saving the order is async, so moves made before it lands use this local copy instead.
   const [localOrder, setLocalOrder] = createSignal<string[]>()
   let orderWrites = 0
 
-  // Groups in their saved order; groups without a saved position follow in tab order.
+  // Groups use saved order unless recentSort ranks their latest activity; new groups follow in tab order.
   const orderedGroups = createMemo(() => {
     const result = new Map<string, Group>()
     for (const tab of tabs()) {
@@ -172,7 +179,18 @@ function BetterTabs() {
       const index = order.indexOf(key)
       return index === -1 ? order.length : index
     }
-    return [...result.values()].sort((left, right) => rank(left.key) - rank(right.key))
+    const list = [...result.values()]
+    if (recentSort) {
+      for (const group of list) group.tabs.sort((left, right) => activityOf(right.sessionID) - activityOf(left.sessionID))
+    }
+    return list.sort((left, right) => {
+      if (recentSort === "groups") {
+        const recent = groupActivity(right) - groupActivity(left)
+        if (recent !== 0) return recent
+      }
+      // Stable sorting keeps the host tab order and saved group order when timestamps tie.
+      return rank(left.key) - rank(right.key)
+    })
   })
 
   // Live reorder while a group header is being dragged.
@@ -225,9 +243,6 @@ function BetterTabs() {
   }
 
   // Two-step shortcuts: alt+G picks group G, then alt+T opens tab T of that group ----------------
-  const options = readOptions(ctx.options)
-  for (const warning of options.warnings) toast(warning, "warning")
-  const { modifier, slotKeys, confirmClose, padding } = options
 
   // Terminal rows are one cell tall, so padding adds whole blank lines around the label.
   const rowHeight = 1 + padding * 2
