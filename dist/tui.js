@@ -1596,6 +1596,10 @@ function BetterTabs() {
     if (changed)
       setGitVersion((value) => value + 1);
   };
+  const folderOf = (directory) => {
+    const normalized = path2.resolve(directory);
+    return process.platform === "win32" || process.platform === "darwin" ? normalized.toLowerCase() : normalized;
+  };
   const groupOf = (sessionID) => {
     const session = ctx.data.session.get(sessionID);
     if (!session)
@@ -1603,9 +1607,10 @@ function BetterTabs() {
     const directory = session.location.directory;
     if (session.projectID === GLOBAL_PROJECT) {
       const normalized = path2.resolve(directory);
-      const key = process.platform === "win32" || process.platform === "darwin" ? normalized.toLowerCase() : normalized;
+      const folder = folderOf(directory);
       return {
-        key: `dir:${key}`,
+        key: `dir:${folder}`,
+        folder,
         name: path2.basename(normalized) || normalized,
         noGit: !insideGit(normalized)
       };
@@ -1613,10 +1618,12 @@ function BetterTabs() {
     const project = ctx.data.project.get(session.projectID);
     const canonical = project?.canonical ?? directory;
     const name = project?.name || path2.basename(canonical) || canonical;
+    const noGit = !!project && !project.vcs && !insideGit(canonical);
     return {
       key: session.projectID,
+      folder: folderOf(canonical),
       name,
-      noGit: !!project && !project.vcs && !insideGit(canonical)
+      noGit
     };
   };
   const titleOf = (tab) => ctx.data.session.get(tab.sessionID)?.title ?? tab.title ?? "Untitled session";
@@ -1638,26 +1645,49 @@ function BetterTabs() {
     };
   };
   const orderedGroups = createMemo(() => {
-    const result = new Map;
-    const custom = grouping() === "custom";
-    for (const tab of tabs()) {
-      const info = custom ? customInfo(tab.sessionID) : groupOf(tab.sessionID) ?? {
-        key: UNKNOWN_GROUP,
-        name: "\u2026",
-        noGit: false
-      };
-      const group = result.get(info.key) ?? {
-        ...info,
-        tabs: []
-      };
-      group.tabs.push(tab);
-      result.set(info.key, group);
-    }
     const order = localOrder() ?? state.groupOrder ?? [];
     const rank = (key) => {
       const index = order.indexOf(key);
       return index === -1 ? order.length : index;
     };
+    const keyOf = new Map;
+    for (const tab of tabs()) {
+      const info = groupOf(tab.sessionID);
+      if (!info)
+        continue;
+      const current = keyOf.get(info.folder);
+      const better = current === undefined || (rank(info.key) - rank(current) || (info.key < current ? -1 : 1)) < 0;
+      if (better)
+        keyOf.set(info.folder, info.key);
+    }
+    const result = new Map;
+    for (const tab of tabs()) {
+      if (grouping() === "custom") {
+        const info = customInfo(tab.sessionID);
+        const group = result.get(info.key) ?? {
+          ...info,
+          tabs: []
+        };
+        group.tabs.push(tab);
+        result.set(info.key, group);
+        continue;
+      }
+      const info = groupOf(tab.sessionID);
+      const key = info ? keyOf.get(info.folder) : UNKNOWN_GROUP;
+      const group = result.get(key) ?? {
+        key,
+        name: info?.name ?? "\u2026",
+        noGit: info?.noGit ?? false,
+        tabs: []
+      };
+      if (info && info.key === key)
+        Object.assign(group, {
+          name: info.name,
+          noGit: info.noGit
+        });
+      group.tabs.push(tab);
+      result.set(key, group);
+    }
     const list = [...result.values()];
     if (recent)
       for (const group of list)

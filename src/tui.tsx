@@ -147,21 +147,27 @@ function BetterTabs() {
     if (changed) setGitVersion((value) => value + 1)
   }
 
+  // Default Windows and macOS file systems ignore case, so `~/Repo` and `~/repo` are one folder.
+  const folderOf = (directory: string) => {
+    const normalized = path.resolve(directory)
+    return process.platform === "win32" || process.platform === "darwin" ? normalized.toLowerCase() : normalized
+  }
+
   const groupOf = (sessionID: string) => {
     const session = ctx.data.session.get(sessionID)
     if (!session) return undefined
     const directory = session.location.directory
     if (session.projectID === GLOBAL_PROJECT) {
       const normalized = path.resolve(directory)
-      // Default Windows and macOS file systems ignore case, so `~/Repo` and `~/repo` are one folder.
-      const key = process.platform === "win32" || process.platform === "darwin" ? normalized.toLowerCase() : normalized
-      return { key: `dir:${key}`, name: path.basename(normalized) || normalized, noGit: !insideGit(normalized) }
+      const folder = folderOf(directory)
+      return { key: `dir:${folder}`, folder, name: path.basename(normalized) || normalized, noGit: !insideGit(normalized) }
     }
     const project = ctx.data.project.get(session.projectID)
     const canonical = project?.canonical ?? directory
     const name = project?.name || path.basename(canonical) || canonical
     // Directories without a repository get their own project with no `vcs`.
-    return { key: session.projectID, name, noGit: !!project && !project.vcs && !insideGit(canonical) }
+    const noGit = !!project && !project.vcs && !insideGit(canonical)
+    return { key: session.projectID, folder: folderOf(canonical), name, noGit }
   }
 
   const titleOf = (tab: Pick<Tab, "sessionID" | "title">) =>
@@ -189,20 +195,36 @@ function BetterTabs() {
 
   // Groups in their saved order, or by latest activity in recent mode; ties and new groups follow in tab order.
   const orderedGroups = createMemo(() => {
-    const result = new Map<string, Group>()
-    const custom = grouping() === "custom"
-    for (const tab of tabs()) {
-      const info = custom
-        ? customInfo(tab.sessionID)
-        : (groupOf(tab.sessionID) ?? { key: UNKNOWN_GROUP, name: "…", noGit: false })
-      const group = result.get(info.key) ?? { ...info, tabs: [] }
-      group.tabs.push(tab)
-      result.set(info.key, group)
-    }
     const order = localOrder() ?? state.groupOrder ?? []
     const rank = (key: string) => {
       const index = order.indexOf(key)
       return index === -1 ? order.length : index
+    }
+    // Rewriting a repository's first commit gives it a new project ID, so projects in one folder share a group
+    // under their best-ranked key, which keeps the saved order and collapsed state.
+    const keyOf = new Map<string, string>()
+    for (const tab of tabs()) {
+      const info = groupOf(tab.sessionID)
+      if (!info) continue
+      const current = keyOf.get(info.folder)
+      const better = current === undefined || (rank(info.key) - rank(current) || (info.key < current ? -1 : 1)) < 0
+      if (better) keyOf.set(info.folder, info.key)
+    }
+    const result = new Map<string, Group>()
+    for (const tab of tabs()) {
+      if (grouping() === "custom") {
+        const info = customInfo(tab.sessionID)
+        const group = result.get(info.key) ?? { ...info, tabs: [] }
+        group.tabs.push(tab)
+        result.set(info.key, group)
+        continue
+      }
+      const info = groupOf(tab.sessionID)
+      const key = info ? keyOf.get(info.folder)! : UNKNOWN_GROUP
+      const group = result.get(key) ?? { key, name: info?.name ?? "…", noGit: info?.noGit ?? false, tabs: [] }
+      if (info && info.key === key) Object.assign(group, { name: info.name, noGit: info.noGit })
+      group.tabs.push(tab)
+      result.set(key, group)
     }
     const list = [...result.values()]
     if (recent)

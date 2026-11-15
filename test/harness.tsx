@@ -112,6 +112,8 @@ export async function startTui(options: {
   theme?: any
   // Host tab flags by session ID, such as { active: true } or { unread: "error" }.
   tabState?: Record<string, Record<string, unknown>>
+  // Project fields by project ID; by default a project's name and folder are its ID.
+  projects?: Record<string, { name?: string; canonical?: string }>
   size?: { width: number; height: number }
 }) {
   const storage = createStorage(options.stateDir, options.writeDelay ?? 5)
@@ -144,7 +146,7 @@ export async function startTui(options: {
     data: {
       session: { get: (sessionID: string) => cache[sessionID], sync },
       project: {
-        get: (id: string) => ({ id, name: id, canonical: id, vcs: "git" }),
+        get: (id: string) => ({ id, name: id, canonical: id, vcs: "git", ...options.projects?.[id] }),
         sync: async () => {},
       },
     },
