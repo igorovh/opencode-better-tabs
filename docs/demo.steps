@@ -1,0 +1,37 @@
+# Records docs/demo.gif: bun run record -- --out docs/demo.gif --sessions docs/demo.json --steps docs/demo.steps
+# Tabs open in mixed order; the plugin groups them by repository.
+wait 1500
+expect-above Document the webhooks API -> acme-web
+
+# alt+2 selects acme-web and shows its tab keys; alt+2 again opens its second tab.
+key alt+2
+wait 1200
+key alt+2
+wait 1000
+
+# Drag acme-mobile to the top, then drag a tab within its group.
+drag acme-mobile -> acme-api
+expect-above acme-mobile -> acme-api
+drag Speed up the landing page -> Dark mode for the settings page
+expect-above Speed up the landing page -> Dark mode for the settings page
+
+# Collapse and expand a group with a click.
+click acme-api
+expect-not Fix flaky checkout test
+wait 800
+click acme-api
+expect Fix flaky checkout test
+
+# Close a tab with its cross.
+close Fix flaky checkout test
+expect-not Fix flaky checkout test
+
+# Search every tab.
+type /tabs
+key Enter
+wait 800
+type webhooks
+wait 800
+key Enter
+expect-not Search tabs
+wait 1500

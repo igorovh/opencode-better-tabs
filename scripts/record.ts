@@ -28,7 +28,7 @@ const STEPS_HELP = `Steps, one per --step or per line of --steps <file>:
   middle <text>             middle-click that row
   close <text>              hover that row, then click its close cross
   drag <text> -> <text>     drag one row onto another, such as a group header
-  key <keys>                press keys, such as alt+2 or ctrl+p
+  key <keys>                press keys, such as alt+2, alt+up or ctrl+p
   type <text>               type text, such as /close (add "key Enter" to run it)
   expect <text>             fail unless <text> shows within 5 s, such as a dialog title
   expect-not <text>         fail unless <text> is gone within 5 s, such as a closed tab
@@ -43,7 +43,8 @@ if (!steps.length) console.log(`No steps given, so the GIF shows the bar at rest
 
 // --sessions takes a JSON array of { project, title }, to set up what a change needs, such as more groups.
 // Busy and unread tabs need a model run, so show those states with `bun run preview` instead.
-type SampleSession = { project: string; title: string }
+// `rewrite: true` amends the project's first commit before this session, which gives the folder a new project ID.
+type SampleSession = { project: string; title: string; rewrite?: boolean }
 const sessions: SampleSession[] = values.sessions
   ? readSessions(values.sessions)
   : [
@@ -63,6 +64,9 @@ const ttydCredential = { username: "record", password: crypto.randomUUID() }
 const password = "record"
 const env = {
   ...process.env,
+  // The footer shows the project path, so a home of `work` turns it into ~/repos/<project>.
+  HOME: work,
+  USERPROFILE: work,
   XDG_CONFIG_HOME: path.join(work, "config"),
   XDG_DATA_HOME: path.join(work, "data"),
   XDG_STATE_HOME: path.join(work, "state"),
@@ -98,16 +102,17 @@ ${output.join("").slice(-4000)}`)
 }
 
 try {
+  const git = (project: string, ...args: string[]) =>
+    spawnSync("git", ["-C", path.join(work, "repos", project), "-c", "user.name=demo", "-c", "user.email=demo@example.com", ...args])
   // Each project needs its own root commit: OpenCode groups sessions by it.
   for (const project of new Set(sessions.map((session) => session.project))) {
-    const dir = path.join(work, "repos", project)
-    mkdirSync(dir, { recursive: true })
-    const git = (...args: string[]) =>
-      spawnSync("git", ["-C", dir, "-c", "user.name=demo", "-c", "user.email=demo@example.com", ...args])
-    git("init", "-q")
-    git("commit", "-q", "--allow-empty", "-m", `init ${project}`)
+    mkdirSync(path.join(work, "repos", project), { recursive: true })
+    git(project, "init", "-q")
+    git(project, "commit", "-q", "--allow-empty", "-m", `init ${project}`)
   }
   mkdirSync(path.join(env.XDG_CONFIG_HOME, "opencode"), { recursive: true })
+  // Otherwise the home screen shows an "/update to install" notice.
+  writeFileSync(path.join(env.XDG_CONFIG_HOME, "opencode", "opencode.json"), JSON.stringify({ update: "disable" }))
   writeFileSync(
     path.join(env.XDG_CONFIG_HOME, "opencode", "cli.json"),
     JSON.stringify({
@@ -123,6 +128,7 @@ try {
 
   const ids: string[] = []
   for (const session of sessions) {
+    if (session.rewrite) git(session.project, "commit", "-q", "--amend", "--allow-empty", "-m", `rewrite ${session.project}`)
     const response = await fetch(`${api}/api/session`, {
       method: "POST",
       headers: auth,
@@ -193,7 +199,8 @@ try {
       "-i",
       await video.path(),
       "-vf",
-      `${crop}fps=12,scale='min(960,iw)':-1:flags=lanczos,split[a][b];[a]palettegen[p];[b][p]paletteuse`,
+      // Terminal colours are flat, so dithering only adds noise and size.
+      `${crop}fps=12,scale='min(960,iw)':-1:flags=lanczos,split[a][b];[a]palettegen[p];[b][p]paletteuse=dither=none`,
       values.out!,
     ],
     { stdio: "inherit" },
@@ -339,7 +346,7 @@ async function sidebarCrop(page: Page) {
 
 // Playwright names modifiers Control, Alt, Shift and Meta, and keys like Enter and Escape.
 function keyName(key: string) {
-  const aliases: Record<string, string> = { ctrl: "Control", control: "Control", cmd: "Meta", command: "Meta", meta: "Meta", option: "Alt", opt: "Alt", esc: "Escape" }
+  const aliases: Record<string, string> = { ctrl: "Control", control: "Control", cmd: "Meta", command: "Meta", meta: "Meta", option: "Alt", opt: "Alt", esc: "Escape", up: "ArrowUp", down: "ArrowDown", left: "ArrowLeft", right: "ArrowRight" }
   const lower = key.toLowerCase()
   if (aliases[lower]) return aliases[lower]
   return key.length === 1 ? key : key[0]!.toUpperCase() + key.slice(1)
@@ -347,8 +354,10 @@ function keyName(key: string) {
 
 function readSessions(file: string): SampleSession[] {
   const list = JSON.parse(readFileSync(file, "utf8"))
-  const valid = (item: any) => typeof item?.project === "string" && item.project && typeof item?.title === "string"
+  const valid = (item: any) =>
+    typeof item?.project === "string" && item.project && typeof item?.title === "string" &&
+    (item.rewrite === undefined || typeof item.rewrite === "boolean")
   if (!Array.isArray(list) || !list.length || !list.every(valid))
-    throw new Error(`${file} must be a non-empty JSON array of { "project": string, "title": string }`)
+    throw new Error(`${file} must be a non-empty JSON array of { "project": string, "title": string, "rewrite"?: boolean }`)
   return list
 }
