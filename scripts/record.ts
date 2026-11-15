@@ -26,6 +26,7 @@ const STEPS_HELP = `Steps, one per --step or per line of --steps <file>:
   hover <text>              move the pointer onto the row showing <text>
   click <text>              left-click that row
   middle <text>             middle-click that row
+  right <text>              right-click that row
   close <text>              hover that row, then click its close cross
   drag <text> -> <text>     drag one row onto another, such as a group header
   key <keys>                press keys, such as alt+2, alt+up or ctrl+p
@@ -199,8 +200,10 @@ try {
       "-i",
       await video.path(),
       "-vf",
-      // Terminal colours are flat, so dithering only adds noise and size.
-      `${crop}fps=12,scale='min(960,iw)':-1:flags=lanczos,split[a][b];[a]palettegen[p];[b][p]paletteuse=dither=none`,
+      // Terminal colours are flat, so dithering only adds noise; still frames are dropped and held instead.
+      `${crop}fps=12,scale='min(960,iw)':-1:flags=lanczos,mpdecimate,split[a][b];[a]palettegen[p];[b][p]paletteuse=dither=none:diff_mode=rectangle`,
+      "-fps_mode",
+      "vfr",
       values.out!,
     ],
     { stdio: "inherit" },
@@ -263,11 +266,12 @@ async function runStep(page: Page, step: string) {
       return page.mouse.move(at.x, at.y, { steps: 12 })
     }
     case "click":
-    case "middle": {
+    case "middle":
+    case "right": {
       const at = await cellOf(page, arg)
       await page.mouse.move(at.x, at.y, { steps: 12 })
       await sleep(300)
-      return page.mouse.click(at.x, at.y, { button: verb === "middle" ? "middle" : "left" })
+      return page.mouse.click(at.x, at.y, { button: verb === "click" ? "left" : verb })
     }
     case "close": {
       const row = await cellOf(page, arg)
