@@ -70,6 +70,7 @@ for (const [name, plugin] of [
       sort?: "manual" | "recent"
       sessionList?: Session[]
       tabState?: Record<string, Record<string, unknown>>
+      projects?: Record<string, { name?: string; canonical?: string }>
     } = {}) => {
       const tui = await startTui({ stateDir: dir, sessions: sessionList, plugin, options: sort ? { sort } : {}, ...options })
       running.push(tui)
@@ -132,6 +133,25 @@ for (const [name, plugin] of [
       expect(groupsInFrame(await a.frame())).toEqual(["gamma", "alpha", "beta"])
       expect(groupsInFrame(await b.frame())).toEqual(["gamma", "alpha", "beta"])
       expect(a.hostOrder()).toEqual(["gamma1", "gamma2", "alpha1", "alpha2", "beta1", "beta2"])
+    })
+
+    // A rewritten first commit gives the same repository a second project ID.
+    test("projects in the same folder share one group under their saved key", async () => {
+      init({ collapsed: {}, autoGroup: true, restoreMode: "auto", groupOrder: ["gamma", "beta", "alpha"] })
+      const tui = await start({ syncDelay: 5, projects: { beta: { name: "alpha", canonical: "alpha" } } })
+      await settle(tui)
+      const frame = await tui.frame()
+      expect(frame.split("▾ alpha").length - 1).toBe(1)
+      expect(frame).not.toContain("▾ beta")
+      expect(groupsInFrame(frame)).toEqual(["gamma", "alpha"])
+      expect(tui.hostOrder()).toEqual(["gamma1", "gamma2", "alpha1", "alpha2", "beta1", "beta2"])
+    })
+
+    test("projects with the same name in different folders keep separate groups", async () => {
+      init()
+      const tui = await start({ syncDelay: 5, projects: { beta: { name: "alpha" } } })
+      await settle(tui)
+      expect((await tui.frame()).split("▾ alpha").length - 1).toBe(2)
     })
 
     test("recent sort puts the latest run first and keeps the saved order for ties", async () => {

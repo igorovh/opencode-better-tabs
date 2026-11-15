@@ -1,23 +1,24 @@
 # opencode-better-tabs
 
 A plugin for the [OpenCode](https://opencode.ai) TUI (v2) that redraws the vertical session tab bar on the left:
-tabs are grouped by git repository, every group and tab has a visible keyboard shortcut, and each group header
-shows how many sessions are working, waiting for you, or unread.
+tabs are grouped by git repository, every group and tab has a visible keyboard shortcut, groups and tabs can be
+dragged into any order, and each group header shows how many sessions are working, waiting for you, or unread.
 
 > Supports OpenCode V2 2.2.5 or newer. V1 is not supported.
 
 <p align="center">
-  <img src="docs/demo.gif" alt="Tabs grouped by repository, two-step shortcuts, moving a group and tab search" width="1000">
+  <img src="docs/demo.gif" alt="Tabs grouped by repository, two-step shortcuts, dragging a group and a tab, collapsing a group, closing a tab and tab search" width="1000">
 </p>
 
-The demo shows tabs grouped by repository, opening a tab with two shortcuts (`alt+2`, `alt+2`), moving a group up
-with `alt+↑`, and searching all tabs with `/tabs`. It uses made-up repositories and sessions; see
-`docs/demo.tape` to record it again.
+The demo shows tabs grouped by repository, opening a tab with two shortcuts (`alt+2`, `alt+2`), dragging a group
+to the top and a tab within its group, collapsing a group, closing a tab with its `✕`, and searching all tabs with
+`/tabs`. It uses made-up repositories and sessions; see [Development](#development) to record it again.
 
 ## Features
 
 - **Grouped by repository.** Worktrees belong to their repository's group. Sessions outside any git repository
-  get one group per directory, marked `no git`.
+  get one group per directory, marked `no git`. OpenCode gives a repository a new project ID when its first commit
+  is rewritten (`git rebase --root`, `git filter-repo`); sessions from before and after still share one group.
 - **Two-step shortcuts.** `alt+1` selects the first group; the group labels disappear and the tabs of that group
   show their own keys. Press one (`alt+3`) to open that tab. The selection resets after 3 s, or press `esc`
   (`alt+x`, `alt+esc`) to cancel.
@@ -168,6 +169,16 @@ bun run preview -- --out bar.png
 Pass plugin options with `--options '{"padding":1}'` and hover a row with `--hover "<row text>"`. When a
 change affects what the bar shows, render it on the base branch and on your branch and post both images as
 "Before" and "After".
+
+To record the real OpenCode TUI to a GIF, run `bun run record`. It needs `opencode` (V2), `ttyd` and `ffmpeg` on
+`PATH` (or `OPENCODE_BIN` and `TTYD_BIN`) and Playwright's Chromium. The README demo is recorded with:
+
+```sh
+bun run record -- --out docs/demo.gif --sessions docs/demo.json --steps docs/demo.steps
+```
+
+Run `bun run record` without steps to see the step list. The `expect` steps in `docs/demo.steps` fail the recording
+when the bar does not behave as shown, so the demo doubles as a test.
 
 To run your checkout instead of the published plugin, put its path in `plugins` and keep the compiler running.
 OpenCode reloads the plugin whenever `dist/` changes.
