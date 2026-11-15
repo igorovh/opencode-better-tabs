@@ -1473,7 +1473,11 @@ var UNKNOWN_GROUP = "\x00unknown";
 var SPINNER = ["\u280B", "\u2819", "\u2839", "\u2838", "\u283C", "\u2834", "\u2826", "\u2827", "\u2807", "\u280F"];
 var UNGROUPED = "Ungrouped";
 var customKey = (name) => `custom:${name}`;
-var cleanGroupName = (name) => (name ?? "").trim() || UNGROUPED;
+var UNGROUPED_KEY = customKey(UNGROUPED);
+var cleanGroupName = (name) => {
+  const clean = (name ?? "").trim();
+  return !clean || clean.toLowerCase() === UNGROUPED.toLowerCase() ? UNGROUPED : clean;
+};
 function truncate(value, width) {
   if (width <= 0)
     return "";
@@ -1692,7 +1696,8 @@ function BetterTabs() {
     if (recent)
       for (const group of list)
         group.tabs.sort((left, right) => activityOf(right.sessionID) - activityOf(left.sessionID));
-    return list.sort((left, right) => recent && groupActivity(right) - groupActivity(left) || rank(left.key) - rank(right.key));
+    const last = (group) => group.key === UNGROUPED_KEY ? 1 : 0;
+    return list.sort((left, right) => last(left) - last(right) || recent && groupActivity(right) - groupActivity(left) || rank(left.key) - rank(right.key));
   });
   const [drag, setDrag] = createSignal();
   const [tabDrag, setTabDrag] = createSignal();
@@ -1705,7 +1710,7 @@ function BetterTabs() {
         list = moveItem(list, from, current.target);
     }
     const dragged = tabDrag();
-    if (!dragged?.moved)
+    if (!dragged?.moved || dragged.partner)
       return list;
     const source = list.find((group) => group.tabs.some((tab) => tab.sessionID === dragged.sessionID));
     if (!source || source.key !== dragged.targetGroup)
@@ -1992,6 +1997,18 @@ function BetterTabs() {
     }
     if (!custom)
       target = source;
+    else if (target.key === UNGROUPED_KEY) {
+      const partner = target.tabs.find((tab) => {
+        const row = tabRows.get(tab.sessionID);
+        return tab.sessionID !== sessionID && !!row && !row.isDestroyed && y >= row.screenY && y < row.screenY + row.height;
+      });
+      if (partner)
+        return {
+          groupKey: target.key,
+          index: 0,
+          partner: partner.sessionID
+        };
+    }
     const fromAbove = own.screenY < y;
     const index = target.tabs.filter((tab) => {
       if (tab.sessionID === sessionID && target.key === source.key)
@@ -2003,7 +2020,8 @@ function BetterTabs() {
     }).length;
     return {
       groupKey: target.key,
-      index
+      index,
+      partner: undefined
     };
   };
   const dragMove = (event) => {
@@ -2030,7 +2048,8 @@ function BetterTabs() {
         ...dragged,
         moved,
         targetGroup: target.groupKey,
-        target: target.index
+        target: target.index,
+        partner: target.partner
       });
     }
   };
@@ -2041,6 +2060,8 @@ function BetterTabs() {
     setTabDrag(undefined);
     if (current?.moved)
       moveGroup(current.key, current.target);
+    else if (dragged?.moved && dragged.partner)
+      assignGroup([dragged.partner, dragged.sessionID], nextGroupName());
     else if (dragged?.moved)
       moveTab(dragged.sessionID, dragged.targetGroup, dragged.target);
     else
@@ -2086,16 +2107,21 @@ function BetterTabs() {
           return;
         event.stopPropagation();
         pressedGroup = props.group.key;
-        setDrag({
-          key: props.group.key,
-          startY: event.y,
-          moved: false,
-          target: props.position
-        });
+        if (props.group.key !== UNGROUPED_KEY)
+          setDrag({
+            key: props.group.key,
+            startY: event.y,
+            moved: false,
+            target: props.position
+          });
       });
       _$setProp(_el$, "onMouseUp", (event) => click(event, () => {
         const over = !!header && event.y >= header.screenY && event.y < header.screenY + header.height;
-        if (!finishDrag() && event.button === 0 && pressedGroup === props.group.key && over)
+        if (finishDrag())
+          return;
+        if (event.button === 2)
+          openGroupMenu(props.group).catch(fail);
+        else if (event.button === 0 && pressedGroup === props.group.key && over)
           toggleGroup(props.group.key);
       }));
       _$insert(_el$, _$createComponent(Show, {
@@ -2177,6 +2203,7 @@ function BetterTabs() {
     const id = () => `tab:${props.tab.sessionID}`;
     const armed = () => pending() === props.groupKey;
     const dragged = () => !!drag()?.moved && props.groupKey === drag()?.key || !!tabDrag()?.moved && tabDrag()?.sessionID === props.tab.sessionID;
+    const partner = () => !!tabDrag()?.moved && tabDrag()?.partner === props.tab.sessionID;
     const draggable = () => {
       const group = groupByKey(props.groupKey);
       return !recent && !!group && visibleTabIDs(group).length === group.tabs.length;
@@ -2219,6 +2246,8 @@ function BetterTabs() {
           return;
         if (event.button === 1)
           requestClose(props.tab.sessionID).catch(fail);
+        else if (event.button === 2)
+          openTabMenu(props.tab).catch(fail);
         else if (event.button === 0)
           focus(props.tab.sessionID);
       }));
@@ -2288,7 +2317,7 @@ function BetterTabs() {
         }
       }), null);
       _$effect((_p$) => {
-        var _v$ = dragged() ? theme().background.raised.high : rowBackground(id(), props.tab.active), _v$2 = theme().hue.accent[300], _v$3 = status(props.tab).color;
+        var _v$ = partner() ? theme().background.action.primary.selected : dragged() ? theme().background.raised.high : rowBackground(id(), props.tab.active), _v$2 = theme().hue.accent[300], _v$3 = status(props.tab).color;
         _v$ !== _p$.e && (_p$.e = _$setProp(_el$1, "backgroundColor", _v$, _p$.e));
         _v$2 !== _p$.t && (_p$.t = _$setProp(_el$10, "fg", _v$2, _p$.t));
         _v$3 !== _p$.a && (_p$.a = _$setProp(_el$11, "fg", _v$3, _p$.a));
@@ -2428,7 +2457,20 @@ function BetterTabs() {
     }
     ctx.ui.tabs.close(sessionID);
   };
-  const seedCustomGroups = (draft) => {
+  const activeTab = () => tabs().find((tab) => tab.active);
+  const customNames = () => {
+    if (grouping() === "custom")
+      return orderedGroups().filter((group) => group.key !== UNGROUPED_KEY).map((group) => group.name);
+    return [...new Set(tabs().flatMap((tab) => customMap()[tab.sessionID] ?? []))];
+  };
+  const nextGroupName = () => {
+    const taken = new Set(customNames().map((name) => name.toLowerCase()));
+    let n = 1;
+    while (taken.has(`group ${n}`))
+      n++;
+    return `Group ${n}`;
+  };
+  const seedFromRepositories = (draft) => {
     draft.customGroups ??= {};
     for (const tab of tabs()) {
       if (draft.customGroups[tab.sessionID] !== undefined)
@@ -2438,43 +2480,168 @@ function BetterTabs() {
         draft.customGroups[tab.sessionID] = name;
     }
   };
-  const activeTab = () => tabs().find((tab) => tab.active);
-  const toggleGrouping = () => {
-    const next = grouping() === "custom" ? "repo" : "custom";
-    update((draft) => {
-      draft.grouping = next;
-      if (next === "custom")
-        seedCustomGroups(draft);
-    }).then(() => toast(next === "custom" ? "Custom tab groups on; repository grouping stays the default" : "Repository tab groups on")).catch(fail);
-  };
-  const setCustomGroup = async (input) => {
-    let name = (input ?? "").trim();
-    if (!name) {
-      const answer = await ctx.ui.dialog.prompt({
-        title: "Move tab to group",
-        placeholder: "Group name"
-      });
-      if (answer === undefined)
-        return;
-      name = answer.trim();
-      if (!name)
-        return toast("The group name is empty, so the tab stays where it is", "warning");
-    }
-    const current = activeTab();
-    if (!current)
-      return toast("No tab is open", "warning");
-    const clean = cleanGroupName(name);
+  const setGrouping = (next, seed = false) => update((draft) => {
+    draft.grouping = next;
+    if (seed)
+      seedFromRepositories(draft);
+  }).then(() => toast(next === "custom" ? "Custom groups on: drag a tab onto an ungrouped tab, or use /group <name>" : "Tabs are grouped by repository again; your custom groups are kept")).catch(fail);
+  const assignGroup = (sessionIDs, input) => {
+    const name = cleanGroupName(input);
+    const switched = grouping() !== "custom";
     update((draft) => {
       draft.grouping = "custom";
-      seedCustomGroups(draft);
       draft.customGroups ??= {};
-      if (clean === UNGROUPED)
-        delete draft.customGroups[current.sessionID];
-      else
-        draft.customGroups[current.sessionID] = clean;
-      if (draft.collapsed[customKey(clean)])
-        delete draft.collapsed[customKey(clean)];
-    }).then(() => toast(`Tab moved to ${clean}`)).catch(fail);
+      for (const id of sessionIDs) {
+        if (name === UNGROUPED)
+          delete draft.customGroups[id];
+        else
+          draft.customGroups[id] = name;
+      }
+      delete draft.collapsed[customKey(name)];
+    }).then(() => toast(switched ? `Custom groups on; moved to ${name}` : `Moved to ${name}`)).catch(fail);
+  };
+  const renameGroup = (from, input) => {
+    const to = cleanGroupName(input);
+    if (to === from)
+      return;
+    update((draft) => {
+      draft.customGroups ??= {};
+      for (const [id, name] of Object.entries(draft.customGroups)) {
+        if (name !== from)
+          continue;
+        if (to === UNGROUPED)
+          delete draft.customGroups[id];
+        else
+          draft.customGroups[id] = to;
+      }
+      if (draft.collapsed[customKey(from)])
+        draft.collapsed[customKey(to)] = true;
+      delete draft.collapsed[customKey(from)];
+      const order = draft.groupOrder ?? [];
+      draft.groupOrder = order.includes(customKey(to)) ? order.filter((key) => key !== customKey(from)) : order.map((key) => key === customKey(from) ? customKey(to) : key);
+    }).then(() => toast(to === UNGROUPED ? `Removed ${from}` : `Renamed ${from} to ${to}`)).catch(fail);
+  };
+  const askName = async (title, value) => {
+    const answer = await ctx.ui.dialog.prompt({
+      title,
+      placeholder: "Group name",
+      value
+    });
+    const name = answer?.trim();
+    if (answer !== undefined && !name)
+      toast("The group name is empty, so nothing changed", "warning");
+    return name || undefined;
+  };
+  const NEW_GROUP = "\x00new";
+  const openTabMenu = async (tab) => {
+    const current = customMap()[tab.sessionID];
+    const options = [...customNames().map((name) => ({
+      title: name,
+      value: name,
+      category: "Move to group"
+    })), {
+      title: "New group\u2026",
+      value: NEW_GROUP,
+      category: "Move to group"
+    }, ...current ? [{
+      title: "Remove from group",
+      value: UNGROUPED,
+      category: "Move to group"
+    }] : []];
+    const selected = await ctx.ui.dialog.select({
+      title: titleOf(tab),
+      options,
+      current: grouping() === "custom" ? current : undefined
+    });
+    if (selected === undefined)
+      return;
+    const name = selected === NEW_GROUP ? await askName("New group", nextGroupName()) : selected;
+    if (name)
+      assignGroup([tab.sessionID], name);
+  };
+  const openGroupMenu = async (group) => {
+    if (grouping() !== "custom" || group.key === UNGROUPED_KEY)
+      return openGroups();
+    const selected = await ctx.ui.dialog.select({
+      title: group.name,
+      options: [{
+        title: "Rename\u2026",
+        value: "rename"
+      }, {
+        title: "Remove group",
+        value: "remove",
+        description: "Its tabs go to Ungrouped"
+      }]
+    });
+    if (selected === "remove")
+      renameGroup(group.name, UNGROUPED);
+    if (selected !== "rename")
+      return;
+    const name = await askName(`Rename ${group.name}`, group.name);
+    if (name)
+      renameGroup(group.name, name);
+  };
+  const openGroups = async () => {
+    const custom = grouping() === "custom";
+    const count = (name) => tabs().filter((tab) => customMap()[tab.sessionID] === name).length;
+    const options = [...customNames().map((name) => ({
+      title: name,
+      value: `group:${name}`,
+      category: "Custom groups",
+      footer: `${count(name)} ${count(name) === 1 ? "tab" : "tabs"}`
+    })), {
+      title: "Group by repository",
+      value: "mode:repo",
+      category: "Grouping",
+      footer: custom ? undefined : "on"
+    }, {
+      title: "Custom groups",
+      value: "mode:custom",
+      category: "Grouping",
+      footer: custom ? "on" : undefined
+    }, ...custom ? [] : [{
+      title: "Custom groups, starting from repositories",
+      value: "mode:seed",
+      category: "Grouping"
+    }]];
+    const selected = await ctx.ui.dialog.select({
+      title: "Tab groups",
+      placeholder: "Search groups",
+      options
+    });
+    if (selected === "mode:repo" && custom)
+      return setGrouping("repo");
+    if (selected === "mode:custom" && !custom)
+      return setGrouping("custom");
+    if (selected === "mode:seed")
+      return setGrouping("custom", true);
+    if (!selected?.startsWith("group:"))
+      return;
+    const name = selected.slice("group:".length);
+    if (!custom)
+      await update((draft) => void (draft.grouping = "custom"));
+    return openGroupMenu({
+      key: customKey(name),
+      name,
+      noGit: false,
+      tabs: []
+    });
+  };
+  const groupCurrent = async (input) => {
+    const current = activeTab();
+    if (!current)
+      return toast("Open a tab first, then move it to a group", "warning");
+    if (input?.trim())
+      return assignGroup([current.sessionID], input);
+    return openTabMenu(current);
+  };
+  const ungroupCurrent = () => {
+    const current = activeTab();
+    if (!current)
+      return toast("Open a tab first", "warning");
+    if (!customMap()[current.sessionID])
+      return toast("This tab is not in a custom group", "warning");
+    assignGroup([current.sessionID], UNGROUPED);
   };
   const setAllCollapsed = (collapsed) => void update((draft) => {
     draft.collapsed = {};
@@ -2482,17 +2649,6 @@ function BetterTabs() {
       for (const group of groups())
         draft.collapsed[group.key] = true;
   }).catch(fail);
-  const ungroupCurrent = () => {
-    if (grouping() !== "custom")
-      return toast("Custom groups are off, so there is nothing to remove", "warning");
-    const current = activeTab();
-    if (!current)
-      return toast("No tab is open", "warning");
-    update((draft) => {
-      if (draft.customGroups)
-        delete draft.customGroups[current.sessionID];
-    }).then(() => toast(`Tab moved to ${UNGROUPED}`)).catch(fail);
-  };
   const openPicker = async () => {
     const options = groups().flatMap((group, position) => group.tabs.map((tab, index) => ({
       title: titleOf(tab),
@@ -2557,23 +2713,32 @@ function BetterTabs() {
       run: applyGrouping
     }, {
       id: "better-tabs.grouping",
-      title: "Toggle custom tab groups",
+      title: grouping() === "custom" ? "Group tabs by repository" : "Use custom tab groups",
       group: "Better tabs",
       palette: true,
-      run: toggleGrouping
+      run: () => void setGrouping(grouping() === "custom" ? "repo" : "custom")
+    }, {
+      id: "better-tabs.groups",
+      title: "Tab groups",
+      group: "Better tabs",
+      palette: true,
+      slash: {
+        name: "groups"
+      },
+      run: () => void openGroups().catch(fail)
     }, {
       id: "better-tabs.set-group",
-      title: "Move current tab to a custom group",
+      title: "Move current tab to a group",
       group: "Better tabs",
       palette: true,
       slash: {
         name: "group",
         arguments: true
       },
-      run: (input) => void setCustomGroup(input).catch(fail)
+      run: (input) => void groupCurrent(input).catch(fail)
     }, {
       id: "better-tabs.ungroup",
-      title: "Remove current tab from its custom group",
+      title: "Remove current tab from its group",
       group: "Better tabs",
       palette: true,
       slash: {

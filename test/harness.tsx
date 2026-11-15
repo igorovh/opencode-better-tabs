@@ -115,6 +115,8 @@ export async function startTui(options: {
   // Project fields by project ID; by default a project's name and folder are its ID.
   projects?: Record<string, { name?: string; canonical?: string }>
   size?: { width: number; height: number }
+  // Answers for dialogs, such as { select: (options) => options.options[0].value }.
+  dialog?: { select?: (options: any) => unknown; prompt?: (options: any) => string | undefined }
 }) {
   const storage = createStorage(options.stateDir, options.writeDelay ?? 5)
   const server = new Map(options.sessions.map((session) => [session.id, session]))
@@ -160,7 +162,8 @@ export async function startTui(options: {
       router: { navigate: () => {} },
       dialog: {
         confirm: async () => true,
-        select: async () => undefined,
+        select: async (dialog: any) => options.dialog?.select?.(dialog),
+        prompt: async (dialog: any) => options.dialog?.prompt?.(dialog),
       },
       slot: (slot: { render: () => any }) => slot,
       tabs: {

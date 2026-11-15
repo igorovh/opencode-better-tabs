@@ -4,6 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import compiledPlugin from "../dist/tui.js"
 import sourcePlugin from "../src/tui"
+import { MouseButtons } from "@opentui/core/testing"
 import { readJson, sleep, startTui, type Session, type Tui } from "./harness"
 
 const sessions: Session[] = ["alpha", "beta"].flatMap((project) =>
@@ -38,6 +39,8 @@ afterEach(async () => {
   rmSync(dir, { recursive: true, force: true })
 })
 
+const custom = { collapsed: {}, autoGroup: true, restoreMode: "auto", groupOrder: [], grouping: "custom", customGroups: {} }
+
 const init = (state?: object) => {
   dir = mkdtempSync(path.join(os.tmpdir(), "better-tabs-custom-"))
   writeFileSync(path.join(dir, "tabs.json"), JSON.stringify({ global: { tabs: ids.map((sessionID) => ({ sessionID })), unread: {} }, cwd: {} }))
@@ -50,7 +53,7 @@ for (const [name, plugin] of [
   ["dist", compiledPlugin],
 ] as const) {
   describe(name, () => {
-    const start = async (options: { tabState?: Record<string, Record<string, unknown>> } = {}) => {
+    const start = async (options: Partial<Parameters<typeof startTui>[0]> = {}) => {
       const tui = await startTui({ stateDir: dir, sessions, plugin, ...options })
       running.push(tui)
       return tui
@@ -66,23 +69,25 @@ for (const [name, plugin] of [
       expect(frame).not.toContain("Ungrouped")
     })
 
-    test("toggling to custom seeds groups from repository names and persists", async () => {
+    test("custom groups start with every tab ungrouped, persist, and switch back to repositories", async () => {
       init()
       const first = await start()
       await settle(first)
       await first.command("better-tabs.grouping")
       await settle(first)
-      const state = readJson(dir, "state")
-      expect(state.grouping).toBe("custom")
-      expect(state.customGroups).toEqual({ alpha1: "alpha", alpha2: "alpha", beta1: "beta", beta2: "beta" })
-      expect(await first.frame()).toContain("▾ alpha")
+      expect(readJson(dir, "state").grouping).toBe("custom")
+      const frame = await first.frame()
+      expect(frame).toContain("▾ Ungrouped")
+      expect(frame).not.toContain("▾ alpha")
       await first.stop()
       running.pop()
 
       const second = await start()
       await settle(second)
+      expect(await second.frame()).toContain("▾ Ungrouped")
+      await second.command("better-tabs.grouping")
+      await settle(second)
       expect(await second.frame()).toContain("▾ alpha")
-      expect(readJson(dir, "state").grouping).toBe("custom")
     })
 
     test("the group command moves the active tab to a named group", async () => {
@@ -94,7 +99,7 @@ for (const [name, plugin] of [
       const frame = await tui.frame()
       expect(frame).toContain("▾ Red")
       expect(rowOf(frame, "alpha 1")).toBeGreaterThan(rowOf(frame, "▾ Red"))
-      expect(rowOf(frame, "alpha 1")).toBeLessThan(rowOf(frame, "▾ alpha"))
+      expect(rowOf(frame, "alpha 1")).toBeLessThan(rowOf(frame, "▾ Ungrouped"))
       const state = readJson(dir, "state")
       expect(state.grouping).toBe("custom")
       expect(state.customGroups.alpha1).toBe("Red")
@@ -107,10 +112,8 @@ for (const [name, plugin] of [
     })
 
     test("dragging a tab onto another group moves it in custom mode", async () => {
-      init()
+      init({ ...custom, customGroups: { alpha1: "alpha", alpha2: "alpha", beta1: "beta", beta2: "beta" } })
       const tui = await start()
-      await settle(tui)
-      await tui.command("better-tabs.grouping")
       await settle(tui)
       const frame = await tui.frame()
       await drag(tui, rowOf(frame, "beta 1"), rowOf(frame, "▾ alpha"))
@@ -149,11 +152,8 @@ for (const [name, plugin] of [
 
     test("dropping a tab on a collapsed group opens that group", async () => {
       init({
+        ...custom,
         collapsed: { "custom:beta": true },
-        autoGroup: true,
-        restoreMode: "auto",
-        groupOrder: [],
-        grouping: "custom",
         customGroups: { alpha1: "alpha", alpha2: "alpha", beta1: "beta", beta2: "beta" },
       })
       const tui = await start({ tabState: { alpha1: { active: true } } })
@@ -166,6 +166,63 @@ for (const [name, plugin] of [
       expect(next).toContain("▾ beta")
       expect(tabsInFrame(next)).toEqual(["alpha1", "alpha2", "beta1", "beta2"])
       expect(readJson(dir, "state").customGroups.alpha2).toBe("beta")
+    })
+
+    test("dropping an ungrouped tab onto another makes a new group of both", async () => {
+      init(custom)
+      const tui = await start()
+      await settle(tui)
+      const frame = await tui.frame()
+      await drag(tui, rowOf(frame, "beta 1"), rowOf(frame, "alpha 2"))
+      await settle(tui)
+      const next = await tui.frame()
+      expect(next).toContain("▾ Group 1")
+      expect(rowOf(next, "▾ Group 1")).toBeLessThan(rowOf(next, "▾ Ungrouped"))
+      expect(readJson(dir, "state").customGroups).toEqual({ alpha2: "Group 1", beta1: "Group 1" })
+    })
+
+    test("right-clicking a group header renames it", async () => {
+      init({ ...custom, collapsed: { "custom:Red": true }, groupOrder: ["custom:Red"], customGroups: { alpha1: "Red", beta1: "Red" } })
+      const titles: string[] = []
+      const tui = await start({
+        dialog: {
+          select: (dialog) => (titles.push(dialog.title), "rename"),
+          prompt: (dialog) => (titles.push(dialog.title), "Work"),
+        },
+      })
+      await settle(tui)
+      await tui.mouse.click(5, rowOf(await tui.frame(), "▸ Red"), MouseButtons.RIGHT)
+      await settle(tui)
+      expect(titles).toEqual(["Red", "Rename Red"])
+      expect(await tui.frame()).toContain("▸ Work")
+      const state = readJson(dir, "state")
+      expect(state.customGroups).toEqual({ alpha1: "Work", beta1: "Work" })
+      expect(state.collapsed).toEqual({ "custom:Work": true })
+      expect(state.groupOrder).toEqual(["custom:Work"])
+    })
+
+    test("right-clicking a tab moves it to a new group", async () => {
+      init()
+      const tui = await start({ dialog: { select: () => " new", prompt: (dialog) => dialog.value } })
+      await settle(tui)
+      await tui.mouse.click(5, rowOf(await tui.frame(), "beta 2"), MouseButtons.RIGHT)
+      await settle(tui)
+      const frame = await tui.frame()
+      expect(frame).toContain("▾ Group 1")
+      expect(rowOf(frame, "beta 2")).toBeLessThan(rowOf(frame, "▾ Ungrouped"))
+      expect(readJson(dir, "state").grouping).toBe("custom")
+    })
+
+    test("the groups list can start custom groups from repositories", async () => {
+      init()
+      const tui = await start({ dialog: { select: () => "mode:seed" } })
+      await settle(tui)
+      await tui.command("better-tabs.groups")
+      await settle(tui)
+      const state = readJson(dir, "state")
+      expect(state.grouping).toBe("custom")
+      expect(state.customGroups).toEqual({ alpha1: "alpha", alpha2: "alpha", beta1: "beta", beta2: "beta" })
+      expect(await tui.frame()).not.toContain("Ungrouped")
     })
   })
 }
