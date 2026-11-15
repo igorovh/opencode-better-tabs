@@ -147,6 +147,13 @@ for (const [name, plugin] of [
       expect(tui.hostOrder()).toEqual(["gamma1", "gamma2", "alpha1", "alpha2", "beta1", "beta2"])
     })
 
+    test("projects with the same name in different folders keep separate groups", async () => {
+      init()
+      const tui = await start({ syncDelay: 5, projects: { beta: { name: "alpha" } } })
+      await settle(tui)
+      expect((await tui.frame()).split("▾ alpha").length - 1).toBe(2)
+    })
+
     test("recent sort puts the latest run first and keeps the saved order for ties", async () => {
       init({ collapsed: {}, autoGroup: true, restoreMode: "auto", groupOrder: ["gamma", "alpha", "beta"] })
       const tui = await start({ sort: "recent", sessionList: recentSessions, syncDelay: 5 })
