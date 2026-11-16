@@ -1,8 +1,9 @@
 # opencode-better-tabs
 
 A plugin for the [OpenCode](https://opencode.ai) TUI (v2) that redraws the vertical session tab bar on the left:
-tabs are grouped by git repository, every group and tab has a visible keyboard shortcut, groups and tabs can be
-dragged into any order, and each group header shows how many sessions are working, waiting for you, or unread.
+tabs are grouped by git repository or into groups you make yourself, every group and tab has a visible keyboard
+shortcut, groups and tabs can be dragged into any order, and each group header shows how many sessions are working,
+waiting for you, or unread.
 
 > Supports OpenCode V2 2.2.5 or newer. V1 is not supported.
 
@@ -35,10 +36,29 @@ to the top and a tab within its group, collapsing a group, closing a tab with it
 - **Reorder groups** by dragging a header with the mouse, or select a group with `alt+N` and press
   `alt+↑` / `alt+↓`. The order is saved and the built-in tab order follows it.
 - **Reorder tabs** inside an expanded group by dragging them with the mouse.
+- **Custom groups**, as a second way to group tabs. See [Custom groups](#custom-groups).
 - **Sort by recent activity** with the `sort` option: the group and the tab where you last sent a message move to
   the top.
 - **Close tabs** with the `✕` that appears on hover, or with a middle click.
 - **Hide the bar** with a command, and show it again.
+
+## Custom groups
+
+Tabs are grouped by repository by default. Switch to custom groups to sort them your own way, for example by task.
+Your custom groups are saved, so you can switch back and forth.
+
+<p align="center">
+  <img src="docs/groups.gif" alt="Switching to custom groups, dropping a tab onto another to make a group, renaming it with a right-click, /group, and switching back to repository groups" width="1000">
+</p>
+
+- **Switch** with `/groups`, which lists your groups and the two ways to group. "Custom groups, starting from
+  repositories" puts every tab in a group named after its repository, so you can start from there.
+- **Make a group** by dropping a tab onto a tab in `Ungrouped`. The two tabs form `Group 1`.
+- **Add a tab** to a group by dropping it on the group's header or tabs, with `/group <name>`, or with a right-click
+  on the tab. `/group <name>` also makes the group when it does not exist yet, and turns custom groups on.
+- **Rename or remove a group** with a right-click on its header, or pick it in `/groups`. Removing a group moves its
+  tabs to `Ungrouped`.
+- Tabs that are in no group sit in `Ungrouped`, which always stays last. `/ungroup` moves the current tab there.
 
 ## Requirements
 
@@ -80,9 +100,14 @@ opencode plugin remove github:igorovh/opencode-better-tabs#v0.5.0
 | `alt+↑` / `alt+↓` (group selected) | | Move the selected group |
 | `esc`, `alt+x`, `alt+esc` (group selected) | | Cancel the selection |
 | `<leader>p` | `/tabs` | Search all tabs |
+| | `/groups` | List custom groups, rename or remove one, and switch between repository and custom groups |
+| | `/group <name>` | Move the current tab to a custom group; without a name, pick one from a list |
+| | `/ungroup` | Move the current tab back to `Ungrouped` |
+| right-click a tab | | Move the tab to a custom group |
+| right-click a group header | | Rename or remove a custom group |
 | | `/close`, `/archive` | Close the current tab (the session is kept) |
 | `<leader>h` | `/tabs-hide` | Show or hide the tab bar |
-| | | Palette: group tabs now, toggle automatic grouping, collapse or expand all |
+| | | Palette: group tabs now, switch between repository and custom groups, toggle automatic grouping, collapse or expand all |
 
 The key order is `1`–`9`, then `c g h i j k l m n o p q r s t u v w x y z`. `a b d e f` are skipped because
 OpenCode uses `alt+a/b/d/e/f` to edit the prompt. Groups and the tabs inside a group use the same order.
@@ -171,14 +196,15 @@ change affects what the bar shows, render it on the base branch and on your bran
 "Before" and "After".
 
 To record the real OpenCode TUI to a GIF, run `bun run record`. It needs `opencode` (V2), `ttyd` and `ffmpeg` on
-`PATH` (or `OPENCODE_BIN` and `TTYD_BIN`) and Playwright's Chromium. The README demo is recorded with:
+`PATH` (or `OPENCODE_BIN` and `TTYD_BIN`) and Playwright's Chromium. The README demos are recorded with:
 
 ```sh
 bun run record -- --out docs/demo.gif --sessions docs/demo.json --steps docs/demo.steps
+bun run record -- --out docs/groups.gif --sessions docs/demo.json --steps docs/groups.steps
 ```
 
-Run `bun run record` without steps to see the step list. The `expect` steps in `docs/demo.steps` fail the recording
-when the bar does not behave as shown, so the demo doubles as a test.
+Run `bun run record` without steps to see the step list. The `expect` steps in the `.steps` files fail the
+recording when the bar does not behave as shown, so the demos double as tests.
 
 To run your checkout instead of the published plugin, put its path in `plugins` and keep the compiler running.
 OpenCode reloads the plugin whenever `dist/` changes.

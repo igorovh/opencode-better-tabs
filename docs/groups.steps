@@ -1,0 +1,74 @@
+# Records docs/groups.gif: bun run record -- --out docs/groups.gif --sessions docs/demo.json --steps docs/groups.steps
+# Tabs are grouped by repository by default.
+wait 1500
+expect acme-mobile
+
+# /groups switches to custom groups, where every tab starts in Ungrouped.
+type /groups
+key Enter
+expect Custom groups, starting from repositories
+wait 1200
+key down
+wait 500
+key Enter
+expect Ungrouped
+expect-not acme-mobile
+wait 1200
+
+# Drop a tab onto another to make a group of the two, then drop one more onto its header.
+drag Fix flaky checkout test -> Dark mode for the settings page
+expect Group 1
+wait 800
+drag Speed up the landing page -> Group 1
+expect-above Speed up the landing page -> Ungrouped
+wait 800
+
+# Right-click the header to rename the group.
+right Group 1
+expect Remove group
+wait 1000
+key Enter
+wait 600
+key Backspace
+key Backspace
+key Backspace
+key Backspace
+key Backspace
+key Backspace
+key Backspace
+type Frontend
+wait 400
+key Enter
+expect Frontend
+expect-not Group 1
+wait 1000
+
+# /group <name> moves the current tab to a group, new or existing.
+click Retry failed push notifications
+wait 800
+type /group Mobile
+wait 400
+key Enter
+expect-above Retry failed push notifications -> Ungrouped
+wait 1000
+
+# Right-click a tab to pick its group.
+right Add rate limiting to orders
+expect New group…
+wait 1000
+key down
+wait 500
+key Enter
+expect-above Add rate limiting to orders -> Ungrouped
+wait 1200
+
+# /groups lists the groups and switches back to repositories; custom groups are kept.
+type /groups
+key Enter
+expect 3 tabs
+wait 1800
+type repository
+wait 600
+key Enter
+expect acme-mobile
+wait 2000

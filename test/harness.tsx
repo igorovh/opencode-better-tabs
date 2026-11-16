@@ -115,6 +115,10 @@ export async function startTui(options: {
   // Project fields by project ID; by default a project's name and folder are its ID.
   projects?: Record<string, { name?: string; canonical?: string }>
   size?: { width: number; height: number }
+  // Like OpenCode, keep only the latest of the tab moves sent while one is being saved.
+  staleMoves?: boolean
+  // Answers for dialogs, such as { select: (options) => options.options[0].value }.
+  dialog?: { select?: (options: any) => unknown; prompt?: (options: any) => string | undefined }
 }) {
   const storage = createStorage(options.stateDir, options.writeDelay ?? 5)
   const server = new Map(options.sessions.map((session) => [session.id, session]))
@@ -137,6 +141,19 @@ export async function startTui(options: {
   })
   const layers: (() => any)[] = []
   const toasts: string[] = []
+  const moves: string[] = []
+  // With staleMoves, a move sent while one is saving waits, and only the latest waiting move is kept.
+  let saving = false
+  let queued: [string, number] | undefined
+  const saveMove = (sessionID: string, index: number) => {
+    saving = true
+    void updateHost((draft) => void (draft.global.tabs = moveSessionTab(draft.global.tabs, sessionID, index))).finally(() => {
+      saving = false
+      const next = queued
+      queued = undefined
+      if (next) saveMove(...next)
+    })
+  }
 
   const ctx: any = {
     theme: options.theme ?? theme,
@@ -160,7 +177,8 @@ export async function startTui(options: {
       router: { navigate: () => {} },
       dialog: {
         confirm: async () => true,
-        select: async () => undefined,
+        select: async (dialog: any) => options.dialog?.select?.(dialog),
+        prompt: async (dialog: any) => options.dialog?.prompt?.(dialog),
       },
       slot: (slot: { render: () => any }) => slot,
       tabs: {
@@ -177,8 +195,13 @@ export async function startTui(options: {
         focus: () => true,
         close: () => true,
         move(sessionID: string, index: number) {
+          moves.push(sessionID)
           if (moveSessionTab(host.global.tabs, sessionID, index) === host.global.tabs) return true
-          void updateHost((draft) => void (draft.global.tabs = moveSessionTab(draft.global.tabs, sessionID, index)))
+          if (options.staleMoves && saving) {
+            queued = [sessionID, index]
+            return true
+          }
+          saveMove(sessionID, index)
           return true
         },
       },
@@ -211,11 +234,11 @@ export async function startTui(options: {
     throw new Error(`No command bound to ${bind}`)
   }
 
-  const command = (id: string) => {
+  const command = (id: string, input?: string) => {
     for (const factory of layers.toReversed()) {
       const layer = factory()
       const found = layer.commands.find((item: any) => item.id === id)
-      if (found) return found.run()
+      if (found) return found.run(input)
     }
     throw new Error(`No command ${id}`)
   }
@@ -223,6 +246,7 @@ export async function startTui(options: {
   return {
     ctx,
     toasts,
+    moves,
     run,
     command,
     hostOrder: () => host.global.tabs.map((tab: { sessionID: string }) => tab.sessionID),
