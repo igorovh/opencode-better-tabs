@@ -2578,7 +2578,7 @@ function BetterTabs() {
         else
           draft.customGroups[id] = to;
       }
-      if (draft.collapsed[customKey(from)])
+      if (to !== UNGROUPED && draft.collapsed[customKey(from)])
         draft.collapsed[customKey(to)] = true;
       delete draft.collapsed[customKey(from)];
       const order = draft.groupOrder ?? [];

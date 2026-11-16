@@ -975,7 +975,8 @@ function BetterTabs() {
         if (to === UNGROUPED) delete draft.customGroups[id]
         else draft.customGroups[id] = to
       }
-      if (draft.collapsed[customKey(from)]) draft.collapsed[customKey(to)] = true
+      // Removing a group must not hide its tabs by collapsing Ungrouped.
+      if (to !== UNGROUPED && draft.collapsed[customKey(from)]) draft.collapsed[customKey(to)] = true
       delete draft.collapsed[customKey(from)]
       // Renaming onto an existing group merges into it, so that group keeps its place.
       const order = draft.groupOrder ?? []
