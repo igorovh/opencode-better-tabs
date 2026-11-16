@@ -115,6 +115,8 @@ export async function startTui(options: {
   // Project fields by project ID; by default a project's name and folder are its ID.
   projects?: Record<string, { name?: string; canonical?: string }>
   size?: { width: number; height: number }
+  // Like OpenCode, keep only the latest of the tab moves sent while one is being saved.
+  staleMoves?: boolean
   // Answers for dialogs, such as { select: (options) => options.options[0].value }.
   dialog?: { select?: (options: any) => unknown; prompt?: (options: any) => string | undefined }
 }) {
@@ -139,6 +141,19 @@ export async function startTui(options: {
   })
   const layers: (() => any)[] = []
   const toasts: string[] = []
+  const moves: string[] = []
+  // With staleMoves, a move sent while one is saving waits, and only the latest waiting move is kept.
+  let saving = false
+  let queued: [string, number] | undefined
+  const saveMove = (sessionID: string, index: number) => {
+    saving = true
+    void updateHost((draft) => void (draft.global.tabs = moveSessionTab(draft.global.tabs, sessionID, index))).finally(() => {
+      saving = false
+      const next = queued
+      queued = undefined
+      if (next) saveMove(...next)
+    })
+  }
 
   const ctx: any = {
     theme: options.theme ?? theme,
@@ -180,8 +195,13 @@ export async function startTui(options: {
         focus: () => true,
         close: () => true,
         move(sessionID: string, index: number) {
+          moves.push(sessionID)
           if (moveSessionTab(host.global.tabs, sessionID, index) === host.global.tabs) return true
-          void updateHost((draft) => void (draft.global.tabs = moveSessionTab(draft.global.tabs, sessionID, index)))
+          if (options.staleMoves && saving) {
+            queued = [sessionID, index]
+            return true
+          }
+          saveMove(sessionID, index)
           return true
         },
       },
@@ -226,6 +246,7 @@ export async function startTui(options: {
   return {
     ctx,
     toasts,
+    moves,
     run,
     command,
     hostOrder: () => host.global.tabs.map((tab: { sessionID: string }) => tab.sessionID),

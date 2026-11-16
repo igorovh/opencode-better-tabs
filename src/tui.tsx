@@ -28,6 +28,8 @@ const GLOBAL_PROJECT = "global"
 // Ticks of the 100 ms timer between checks for a `.git` created after startup.
 const GIT_RECHECK_TICKS = 50
 const SYNC_RETRY = 5000
+// How long to wait for the host to show a tab move before checking the order again.
+const HOST_MOVE_WAIT = 1000
 const UNKNOWN_GROUP = "\u0000unknown"
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
 
@@ -98,8 +100,18 @@ function BetterTabs() {
   // Tabs, sessions and groups ------------------------------------------------------------------
 
   // While tabs are hidden the host no longer tracks them, so fall back to the last known list.
+  // Until the host shows our latest move, tabs keep the order we asked for, so a dropped tab does not flicker.
+  const [awaitedOrder, setAwaitedOrder] = createSignal<string[]>()
   const tabs = createMemo<readonly Tab[]>(() => {
-    if (ctx.ui.tabs.enabled()) return ctx.ui.tabs.list()
+    if (ctx.ui.tabs.enabled()) {
+      const list = ctx.ui.tabs.list()
+      const order = awaitedOrder()
+      if (!order || order.length !== list.length) return list
+      const rank = new Map(order.map((id, index) => [id, index]))
+      return list.every((tab) => rank.has(tab.sessionID))
+        ? [...list].sort((left, right) => rank.get(left.sessionID)! - rank.get(right.sessionID)!)
+        : list
+    }
     return memory.ids.map((sessionID) => ({ sessionID, active: false, busy: false, attention: false }))
   })
 
@@ -190,7 +202,19 @@ function BetterTabs() {
 
   // Repository grouping is the default; custom grouping assigns tabs to your own named groups.
   const grouping = () => state.grouping ?? "repo"
-  const customMap = () => state.customGroups ?? {}
+  // Like localOrder: group changes show at once, before the async save lands.
+  const [localGroups, setLocalGroups] = createSignal<Record<string, string | null>>({})
+  let groupWrites = 0
+  const customMap = () => {
+    const local = Object.entries(localGroups())
+    if (!local.length) return state.customGroups ?? {}
+    const result = { ...state.customGroups }
+    for (const [id, name] of local) {
+      if (name === null) delete result[id]
+      else result[id] = name
+    }
+    return result
+  }
 
   const customInfo = (sessionID: string) => {
     const name = cleanGroupName(customMap()[sessionID])
@@ -264,7 +288,7 @@ function BetterTabs() {
     // its row mid-drag and the pointer would lose the drag. A cross-group target highlights its
     // header instead (see GroupRow) and the tab moves there on release.
     const source = list.find((group) => group.tabs.some((tab) => tab.sessionID === dragged.sessionID))
-    if (!source || source.key !== dragged.targetGroup) return list
+    if (!source || source.key !== dragged.targetGroup || source.key === UNGROUPED_KEY) return list
     return list.map((group) => {
       if (group.key !== source.key) return group
       const from = group.tabs.findIndex((tab) => tab.sessionID === dragged.sessionID)
@@ -294,44 +318,66 @@ function BetterTabs() {
     const source = list.find((group) => group.tabs.some((tab) => tab.sessionID === sessionID))
     if (!source) return
     const target = list.find((group) => group.key === targetGroupKey) ?? source
-    const crossGroup = grouping() === "custom" && target.key !== source.key
-    if (crossGroup) {
-      const name = target.name
-      void update((draft) => {
-        draft.customGroups ??= {}
-        if (name === UNGROUPED) delete draft.customGroups[sessionID]
-        else draft.customGroups[sessionID] = name
-        // The tab is hidden while its new group stays collapsed, so open it.
-        if (draft.collapsed[target.key]) delete draft.collapsed[target.key]
-      }).catch(fail)
-    }
+    // Tabs in Ungrouped keep the host order; dropping one on another makes a group instead.
+    if (source.key === UNGROUPED_KEY && target.key === UNGROUPED_KEY) return
+    if (grouping() === "custom" && target.key !== source.key) assignGroup([sessionID], target.name, true)
     const ids = target.tabs.map((tab) => tab.sessionID).filter((id) => id !== sessionID)
     const at = Math.max(0, Math.min(to, ids.length))
     const next = [...ids.slice(0, at), sessionID, ...ids.slice(at)]
     const position = next.indexOf(sessionID)
     const host = ctx.ui.tabs.list().map((tab) => tab.sessionID).filter((id) => id !== sessionID)
     const index = position > 0 ? host.indexOf(next[position - 1]!) + 1 : host.indexOf(next[1] ?? "")
-    if (index >= 0) ctx.ui.tabs.move(sessionID, index)
+    if (index >= 0) moveHostTab(sessionID, index)
   }
 
-  // Order the host's tabs like our groups, so both bars agree.
-  const applyGrouping = () => {
-    if (!ctx.ui.tabs.enabled()) return
-    const list = orderedGroups()
-    if (list.some((group) => group.key === UNKNOWN_GROUP)) return
-    const target = list.flatMap((group) => group.tabs.map((tab) => tab.sessionID))
-    const current = ctx.ui.tabs.list().map((tab) => tab.sessionID)
-    target.forEach((id, index) => {
-      if (current[index] === id) return
-      ctx.ui.tabs.move(id, index)
-      current.splice(current.indexOf(id), 1)
-      current.splice(index, 0, id)
-    })
+  // The host shows a move only later, and moves sent before that read stale positions and undo each other.
+  // So one tab moves at a time, and the next waits until the host shows the order we asked for.
+  let awaited: { order: string; until: number } | undefined
+  const [hostWait, setHostWait] = createSignal(0)
+  const hostOrder = () => ctx.ui.tabs.list().map((tab) => tab.sessionID)
+  const moveHostTab = (sessionID: string, index: number) => {
+    const order = hostOrder().filter((id) => id !== sessionID)
+    order.splice(index, 0, sessionID)
+    awaited = { order: order.join(), until: Date.now() + HOST_MOVE_WAIT }
+    setAwaitedOrder(order)
+    const timer = setTimeout(() => {
+      retryTimers.delete(timer)
+      setHostWait((value) => value + 1)
+    }, HOST_MOVE_WAIT)
+    retryTimers.add(timer)
+    ctx.ui.tabs.move(sessionID, index)
+  }
+  const hostSettled = () => {
+    if (awaited && hostOrder().join() !== awaited.order && Date.now() < awaited.until) return false
+    awaited = undefined
+    setAwaitedOrder(undefined)
+    return true
   }
   createEffect(() => {
-    if (!state.autoGroup) return
+    hostWait()
+    ctx.ui.tabs.list()
+    untrack(hostSettled)
+  })
+
+  // Order the host's tabs like our groups, so both bars agree. Returns true once they do.
+  const applyGrouping = () => {
+    if (!ctx.ui.tabs.enabled() || !hostSettled()) return false
+    const list = orderedGroups()
+    if (list.some((group) => group.key === UNKNOWN_GROUP)) return false
+    const target = list.flatMap((group) => group.tabs.map((tab) => tab.sessionID))
+    const current = hostOrder()
+    const index = target.findIndex((id, at) => current[at] !== id)
+    if (index === -1) return true
+    moveHostTab(target[index]!, index)
+    return false
+  }
+  // "Group tabs now" keeps going until the order matches, like automatic grouping.
+  const [groupNow, setGroupNow] = createSignal(false)
+  createEffect(() => {
+    if (!state.autoGroup && !groupNow()) return
+    hostWait()
     orderedGroups()
-    untrack(applyGrouping)
+    if (untrack(applyGrouping)) setGroupNow(false)
   })
 
   const focus = (sessionID: string) => {
@@ -872,9 +918,17 @@ function BetterTabs() {
     }
   }
 
+  // Groups without a saved place follow the tab order, which the other mode changes, so the place is saved first.
+  const switchGrouping = (draft: State, next: State["grouping"]) => {
+    if ((draft.grouping ?? "repo") === next) return
+    const shown = orderedGroups().map((group) => group.key)
+    draft.groupOrder = [...shown, ...(draft.groupOrder ?? []).filter((key) => !shown.includes(key))]
+    draft.grouping = next
+  }
+
   const setGrouping = (next: State["grouping"], seed = false) =>
     update((draft) => {
-      draft.grouping = next
+      switchGrouping(draft, next)
       if (seed) seedFromRepositories(draft)
     })
       .then(() =>
@@ -887,11 +941,13 @@ function BetterTabs() {
       .catch(fail)
 
   // Moving tabs turns custom groups on, so the move is visible at once.
-  const assignGroup = (sessionIDs: string[], input: string | undefined) => {
+  const assignGroup = (sessionIDs: string[], input: string | undefined, quiet = false) => {
     const name = cleanGroupName(input)
     const switched = grouping() !== "custom"
+    setLocalGroups((local) => ({ ...local, ...Object.fromEntries(sessionIDs.map((id) => [id, name === UNGROUPED ? null : name])) }))
+    const write = ++groupWrites
     void update((draft) => {
-      draft.grouping = "custom"
+      switchGrouping(draft, "custom")
       draft.customGroups ??= {}
       for (const id of sessionIDs) {
         if (name === UNGROUPED) delete draft.customGroups[id]
@@ -900,8 +956,13 @@ function BetterTabs() {
       // The tab is hidden while its new group stays collapsed, so open it.
       delete draft.collapsed[customKey(name)]
     })
-      .then(() => toast(switched ? `Custom groups on; moved to ${name}` : `Moved to ${name}`))
+      .then(() => {
+        if (switched || !quiet) toast(switched ? `Custom groups on; moved to ${name}` : `Moved to ${name}`)
+      })
       .catch(fail)
+      .finally(() => {
+        if (write === groupWrites) setLocalGroups({})
+      })
   }
 
   const renameGroup = (from: string, input: string) => {
@@ -990,7 +1051,7 @@ function BetterTabs() {
     if (selected === "mode:seed") return setGrouping("custom", true)
     if (!selected?.startsWith("group:")) return
     const name = selected.slice("group:".length)
-    if (!custom) await update((draft) => void (draft.grouping = "custom"))
+    if (!custom) await update((draft) => switchGrouping(draft, "custom"))
     return openGroupMenu({ key: customKey(name), name, noGit: false, tabs: [] })
   }
 
@@ -1076,7 +1137,7 @@ function BetterTabs() {
         title: "Group tabs now",
         group: "Better tabs",
         palette: true,
-        run: applyGrouping,
+        run: () => void setGroupNow(true),
       },
       {
         id: "better-tabs.grouping",

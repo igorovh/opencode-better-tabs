@@ -77,6 +77,29 @@ for (const [name, plugin] of [
       return tui
     }
 
+    test("grouping mixed tabs sends each move once when the host saves moves late", async () => {
+      init()
+      const mixed: Session[] = ["api", "web", "app"].flatMap((project) =>
+        [1, 2, 3].map((n) => ({ id: `${project}${n}`, projectID: project, directory: `/${project}`, title: `${project} ${n}` })),
+      )
+      const open = ["api1", "web1", "api2", "app1", "web2", "api3", "web3", "app2", "app3"]
+      writeFileSync(path.join(dir, "tabs.json"), JSON.stringify({ global: { tabs: open.map((sessionID) => ({ sessionID })), unread: {} }, cwd: {} }))
+      const tui = await startTui({ stateDir: dir, sessions: mixed, plugin, staleMoves: true, writeDelay: 30 })
+      running.push(tui)
+      const seen = new Set<string>()
+      for (let round = 0; round < 25; round++) {
+        await sleep(50)
+        await tui.flush()
+        const frame = await tui.frame()
+        const web = mixed.filter((session) => session.projectID === "web" && frame.includes(session.title))
+        seen.add(web.sort((left, right) => frame.indexOf(left.title) - frame.indexOf(right.title)).map((session) => session.id).join())
+      }
+      expect(tui.hostOrder()).toEqual(["api1", "api2", "api3", "web1", "web2", "web3", "app1", "app2", "app3"])
+      // Moves sent in one batch used to undo each other, so the tabs kept jumping and never settled.
+      expect(tui.moves.length).toBeLessThanOrEqual(open.length)
+      expect([...seen].filter(Boolean)).toEqual(["web1,web2,web3"])
+    })
+
     test("a moved group keeps its place after a restart", async () => {
       init()
       const first = await start({ syncDelay: 10 })
