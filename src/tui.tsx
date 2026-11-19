@@ -23,6 +23,8 @@ const CHORD_TIMEOUT = 3000
 // How far tab titles lean from the base text colour towards the muted one.
 const TITLE_DIM = 0.2
 const MIN_GROUP_NAME = 6
+// The "and N more sessions" line and the blank line above it.
+const MORE_HEIGHT = 2
 // Older OpenCode builds file sessions outside any repository under this shared project ID.
 const GLOBAL_PROJECT = "global"
 // Ticks of the 100 ms timer between checks for a `.git` created after startup.
@@ -846,7 +848,7 @@ function BetterTabs() {
     const bottom = scroller.screenY + geometry().height
     const ends = [...tabRows.values()].filter((row) => !row.isDestroyed).map((row) => row.screenY + row.height)
     // Checked against the whole bar first, so the line cannot hide the only row that made it appear.
-    const count = ends.some((end) => end > bottom) ? ends.filter((end) => end > bottom - 1).length : 0
+    const count = ends.some((end) => end > bottom) ? ends.filter((end) => end > bottom - MORE_HEIGHT).length : 0
     if (count !== hiddenBelow()) setHiddenBelow(count)
   }
 
@@ -1309,6 +1311,7 @@ function BetterTabs() {
                 </box>
               </scrollbox>
               <Show when={hiddenBelow() > 0}>
+                <box height={MORE_HEIGHT - 1} flexShrink={0} />
                 <MoreRow />
               </Show>
             </box>
