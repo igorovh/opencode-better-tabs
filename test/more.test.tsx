@@ -47,11 +47,10 @@ for (const [name, plugin] of [
       const tui = await start(plugin, 10)
       const frame = await tui.frame()
 
-      // The last two lines hold a blank line and the count, so beta 1-4 are hidden below the beta header.
-      expect(lines(frame)[8]!.trim()).toBe("")
-      expect(lines(frame)[9]).toContain("and 4 more sessions")
-      expect(frame).toContain("▾ beta")
-      expect(frame).not.toContain("beta 1")
+      // alpha 1-4 and beta 1 leave the last line free: beta 2-4 are hidden.
+      expect(lines(frame)[9]).toContain("and 3 more sessions")
+      expect(frame).toContain("beta 1")
+      expect(frame).not.toContain("beta 2")
     })
 
     test("shows nothing when only the New session row is below the bar", async () => {

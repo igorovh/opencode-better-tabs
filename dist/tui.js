@@ -1466,7 +1466,6 @@ var NARROW_BREAKPOINT = 12;
 var CHORD_TIMEOUT = 3000;
 var TITLE_DIM = 0.2;
 var MIN_GROUP_NAME = 6;
-var MORE_HEIGHT = 2;
 var GLOBAL_PROJECT = "global";
 var GIT_RECHECK_TICKS = 50;
 var SYNC_RETRY = 5000;
@@ -2452,7 +2451,7 @@ function BetterTabs() {
       return;
     const bottom = scroller.screenY + geometry().height;
     const ends = [...tabRows.values()].filter((row) => !row.isDestroyed).map((row) => row.screenY + row.height);
-    const count = ends.some((end) => end > bottom) ? ends.filter((end) => end > bottom - MORE_HEIGHT).length : 0;
+    const count = ends.some((end) => end > bottom) ? ends.filter((end) => end > bottom - 1).length : 0;
     if (count !== hiddenBelow())
       setHiddenBelow(count);
   };
@@ -2966,12 +2965,7 @@ function BetterTabs() {
             return hiddenBelow() > 0;
           },
           get children() {
-            return [(() => {
-              var _el$30 = _$createElement("box");
-              _$setProp(_el$30, "height", 1);
-              _$setProp(_el$30, "flexShrink", 0);
-              return _el$30;
-            })(), _$createComponent(MoreRow, {})];
+            return _$createComponent(MoreRow, {});
           }
         }), null);
         _$effect((_p$) => {
