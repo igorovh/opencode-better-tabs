@@ -94,7 +94,15 @@ function moveSessionTab<T extends { sessionID: string }>(tabs: T[], sessionID: s
   return next
 }
 
-export type Session = { id: string; projectID: string; directory: string; title: string; time?: { created: number; busy?: number } }
+export type Session = {
+  id: string
+  projectID: string
+  directory: string
+  title: string
+  time?: { created: number; busy?: number }
+  parentID?: string
+  metadata?: Record<string, unknown>
+}
 
 const theme: any = new Proxy(RGBA.fromInts(128, 128, 128, 255), {
   get: (target, property) => (property in target ? (target as any)[property] : theme),
@@ -132,6 +140,8 @@ export async function startTui(options: {
       projectID: session.projectID,
       title: session.title,
       time: session.time,
+      parentID: session.parentID,
+      metadata: session.metadata,
       location: { directory: session.directory },
     })
   }

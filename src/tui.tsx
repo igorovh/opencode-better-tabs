@@ -13,6 +13,7 @@ import {
   type TabsMode,
 } from "./config-files"
 import { readOptions } from "./options"
+import { metadataParent, resolveParents } from "./sub-sessions"
 
 type Tab = ReturnType<Context["ui"]["tabs"]["list"]>[number]
 type Group = { key: string; name: string; noGit: boolean; tabs: Tab[] }
@@ -22,6 +23,7 @@ const NARROW_BREAKPOINT = 12
 const CHORD_TIMEOUT = 3000
 // How far tab titles lean from the base text colour towards the muted one.
 const TITLE_DIM = 0.2
+const SUB_TITLE_DIM = 0.6
 const MIN_GROUP_NAME = 6
 // Older OpenCode builds file sessions outside any repository under this shared project ID.
 const GLOBAL_PROJECT = "global"
@@ -40,6 +42,8 @@ type State = {
   groupOrder: string[]
   grouping: "repo" | "custom"
   customGroups: Record<string, string>
+  // Sub-session links set in the bar: a parent ID, or null to undo the agent's or OpenCode's link.
+  parents: Record<string, string | null>
 }
 
 // Tabs without a custom group land here, so no tab is ever left without a group.
@@ -83,7 +87,7 @@ function BetterTabs() {
   const ctx = usePlugin()
   const theme = () => ctx.theme
   const [state, update] = ctx.storage.store<State>("state", {
-    initial: { collapsed: {}, autoGroup: true, restoreMode: "auto", groupOrder: [], grouping: "repo", customGroups: {} },
+    initial: { collapsed: {}, autoGroup: true, restoreMode: "auto", groupOrder: [], grouping: "repo", customGroups: {}, parents: {} },
   })
   const [memory, setMemory] = ctx.storage.memory<{ ids: string[] }>("memory", { initial: { ids: [] } })
 
@@ -221,6 +225,19 @@ function BetterTabs() {
     return { key: customKey(name), name, noGit: false }
   }
 
+  // Sub-sessions follow their parent tab instead of a group. A link set in the bar wins over the agent's
+  // (session metadata) and OpenCode's own parentID.
+  const linkOf = (sessionID: string) => {
+    const own = state.parents?.[sessionID]
+    if (own !== undefined) return own ?? undefined
+    const session = ctx.data.session.get(sessionID)
+    const linked = metadataParent(session?.metadata)
+    return linked === undefined ? session?.parentID : (linked ?? undefined)
+  }
+  const parents = createMemo(() => resolveParents(tabs().map((tab) => tab.sessionID), linkOf))
+  const childrenOf = (sessionID: string) => tabs().filter((tab) => parents().get(tab.sessionID) === sessionID)
+  const familyOf = (sessionID: string) => [sessionID, ...childrenOf(sessionID).map((tab) => tab.sessionID)]
+
   // Groups in their saved order, or by latest activity in recent mode; ties and new groups follow in tab order.
   const orderedGroups = createMemo(() => {
     const order = localOrder() ?? state.groupOrder ?? []
@@ -230,8 +247,15 @@ function BetterTabs() {
     }
     // Rewriting a repository's first commit gives it a new project ID, so projects in one folder share a group
     // under their best-ranked key, which keeps the saved order and collapsed state.
-    const keyOf = new Map<string, string>()
+    const links = parents()
+    const roots = tabs().filter((tab) => !links.has(tab.sessionID))
+    const children = new Map<string, Tab[]>()
     for (const tab of tabs()) {
+      const parent = links.get(tab.sessionID)
+      if (parent) children.set(parent, [...(children.get(parent) ?? []), tab])
+    }
+    const keyOf = new Map<string, string>()
+    for (const tab of roots) {
       const info = groupOf(tab.sessionID)
       if (!info) continue
       const current = keyOf.get(info.folder)
@@ -239,7 +263,7 @@ function BetterTabs() {
       if (better) keyOf.set(info.folder, info.key)
     }
     const result = new Map<string, Group>()
-    for (const tab of tabs()) {
+    for (const tab of roots) {
       if (grouping() === "custom") {
         const info = customInfo(tab.sessionID)
         const group = result.get(info.key) ?? { ...info, tabs: [] }
@@ -255,8 +279,16 @@ function BetterTabs() {
       result.set(key, group)
     }
     const list = [...result.values()]
-    if (recent)
-      for (const group of list) group.tabs.sort((left, right) => activityOf(right.sessionID) - activityOf(left.sessionID))
+    const byActivity = (left: Tab, right: Tab) => activityOf(right.sessionID) - activityOf(left.sessionID)
+    const familyActivity = (tab: Tab) =>
+      Math.max(activityOf(tab.sessionID), ...(children.get(tab.sessionID) ?? []).map((child) => activityOf(child.sessionID)))
+    for (const group of list) {
+      if (recent) group.tabs.sort((left, right) => familyActivity(right) - familyActivity(left))
+      group.tabs = group.tabs.flatMap((tab) => {
+        const family = children.get(tab.sessionID) ?? []
+        return [tab, ...(recent ? [...family].sort(byActivity) : family)]
+      })
+    }
     const last = (group: Group) => (group.key === UNGROUPED_KEY ? 1 : 0)
     return list.sort(
       (left, right) =>
@@ -289,12 +321,20 @@ function BetterTabs() {
     // header instead (see GroupRow) and the tab moves there on release.
     const source = list.find((group) => group.tabs.some((tab) => tab.sessionID === dragged.sessionID))
     if (!source || source.key !== dragged.targetGroup || source.key === UNGROUPED_KEY) return list
+    const family = familyOf(dragged.sessionID)
     return list.map((group) => {
       if (group.key !== source.key) return group
-      const from = group.tabs.findIndex((tab) => tab.sessionID === dragged.sessionID)
-      return { ...group, tabs: moveItem(group.tabs, from, dragged.target) }
+      return { ...group, tabs: moveFamily(group.tabs, family, dragged.target) }
     })
   })
+
+  // A parent tab moves together with its sub-sessions; `to` counts the other tabs.
+  const moveFamily = <T extends { sessionID: string }>(items: readonly T[], family: readonly string[], to: number) => {
+    const rest = items.filter((item) => !family.includes(item.sessionID))
+    const block = items.filter((item) => family.includes(item.sessionID))
+    rest.splice(Math.max(0, Math.min(to, rest.length)), 0, ...block)
+    return rest
+  }
 
   const moveGroup = (key: string, to: number) => {
     const list = orderedGroups().map((group) => group.key)
@@ -321,7 +361,8 @@ function BetterTabs() {
     // Tabs in Ungrouped keep the host order; dropping one on another makes a group instead.
     if (source.key === UNGROUPED_KEY && target.key === UNGROUPED_KEY) return
     if (grouping() === "custom" && target.key !== source.key) assignGroup([sessionID], target.name, true)
-    const ids = target.tabs.map((tab) => tab.sessionID).filter((id) => id !== sessionID)
+    const family = familyOf(sessionID)
+    const ids = target.tabs.map((tab) => tab.sessionID).filter((id) => !family.includes(id))
     const at = Math.max(0, Math.min(to, ids.length))
     const next = [...ids.slice(0, at), sessionID, ...ids.slice(at)]
     const position = next.indexOf(sessionID)
@@ -476,11 +517,14 @@ function BetterTabs() {
     equals: (a, b) => a.length === b.length && a.every((key, index) => key === b[index]),
   })
   const groupByKey = (key: string) => groups().find((group) => group.key === key)
-  // A collapsed group opens while selected, then keeps showing only its active tab.
-  const visibleTabIDs = (group: Group) =>
-    group.tabs
-      .filter((tab) => !state.collapsed[group.key] || tab.active || pending() === group.key)
+  // A collapsed group opens while selected, then keeps showing only its active tab (and that tab's parent).
+  const visibleTabIDs = (group: Group) => {
+    const active = group.tabs.find((tab) => tab.active)?.sessionID
+    const parent = active && parents().get(active)
+    return group.tabs
+      .filter((tab) => !state.collapsed[group.key] || tab.active || tab.sessionID === parent || pending() === group.key)
       .map((tab) => tab.sessionID)
+  }
 
   const status = (tab: Tab) => {
     const t = theme()
@@ -537,6 +581,7 @@ function BetterTabs() {
 
   const background = () => theme().background.raised.base
   const titleColor = createMemo(() => mix(theme().text.base, theme().text.muted, TITLE_DIM))
+  const subTitleColor = createMemo(() => mix(theme().text.base, theme().text.muted, SUB_TITLE_DIM))
   const rowBackground = (id: string, active: boolean) =>
     active ? theme().background.raised.max : hovered() === id ? theme().background.raised.high : background()
 
@@ -559,6 +604,7 @@ function BetterTabs() {
     const source = list.find((item) => item.tabs.some((tab) => tab.sessionID === sessionID))
     if (!own || own.isDestroyed || !source) return { groupKey: source?.key ?? "", index: 0 }
     const custom = grouping() === "custom"
+    const family = familyOf(sessionID)
     // The group whose header or rows hold the pointer wins; above all groups means the first,
     // below all groups means the last.
     let target = list[0] ?? source
@@ -578,19 +624,21 @@ function BetterTabs() {
     else if (target.key === UNGROUPED_KEY) {
       const partner = target.tabs.find((tab) => {
         const row = tabRows.get(tab.sessionID)
-        return tab.sessionID !== sessionID && !!row && !row.isDestroyed && y >= row.screenY && y < row.screenY + row.height
+        return !family.includes(tab.sessionID) && !parents().has(tab.sessionID) && !!row && !row.isDestroyed && y >= row.screenY && y < row.screenY + row.height
       })
       if (partner) return { groupKey: target.key, index: 0, partner: partner.sessionID }
     }
     // The dragged tab takes the place of the row under the pointer: rows above the pointer stay
     // above it. Coming from above counts the row under the pointer too, so the tab lands after it.
     const fromAbove = own.screenY < y
-    const index = target.tabs.filter((tab) => {
-      if (tab.sessionID === sessionID && target.key === source.key) return false
+    const rest = target.tabs.filter((tab) => !family.includes(tab.sessionID))
+    let index = rest.filter((tab) => {
       const row = tabRows.get(tab.sessionID)
       if (!row || row.isDestroyed) return false
       return fromAbove ? row.screenY <= y : row.screenY + row.height - 1 < y
     }).length
+    // Never land between a parent and its sub-sessions.
+    while (index < rest.length && parents().has(rest[index]!.sessionID)) index++
     return { groupKey: target.key, index, partner: undefined as string | undefined }
   }
 
@@ -723,7 +771,14 @@ function BetterTabs() {
     // A collapsed group hides rows, so the drop position could not be read from the screen.
     const draggable = () => {
       const group = groupByKey(props.groupKey)
-      return !recent && !!group && visibleTabIDs(group).length === group.tabs.length
+      return !recent && !sub() && !!group && visibleTabIDs(group).length === group.tabs.length
+    }
+    // Sub-sessions sit indented under their parent; the parent shows how many it has.
+    const sub = () => parents().has(props.tab.sessionID)
+    const indent = () => (sub() ? 2 : 0)
+    const countLabel = () => {
+      const count = sub() ? 0 : childrenOf(props.tab.sessionID).length
+      return count ? `+${count} ` : ""
     }
     let row: BoxRenderable | undefined
     onCleanup(() => {
@@ -732,8 +787,10 @@ function BetterTabs() {
     // Tabs show the second key of the chord only while their group is selected.
     const keys = () => (armed() ? slotLabel(props.position) : "")
     // Layout: marker, status, space, title, space, keys, space, close button (2 columns, always reserved).
-    const showKeys = () => keys().length > 0 && innerWidth() - 5 - keys().length - 2 >= 6
-    const titleWidth = () => innerWidth() - 5 - (showKeys() ? keys().length + 2 : 0)
+    const showKeys = () => keys().length > 0 && innerWidth() - 5 - indent() - keys().length - 2 >= 6
+    const showCount = () => !!countLabel() && innerWidth() - 5 - (showKeys() ? keys().length + 2 : 0) - countLabel().length >= 6
+    const titleWidth = () =>
+      innerWidth() - 5 - indent() - (showKeys() ? keys().length + 2 : 0) - (showCount() ? countLabel().length : 0)
     const [closeHovered, setCloseHovered] = createSignal(false)
     return (
       <box
@@ -777,10 +834,16 @@ function BetterTabs() {
           }
         >
           <text selectable={false}>{" "}</text>
-          <text selectable={false} fg={titleColor()}>
+          <Show when={sub()}>
+            <text selectable={false} fg={theme().text.muted}>{"└ "}</text>
+          </Show>
+          <text selectable={false} fg={sub() ? subTitleColor() : titleColor()}>
             {truncate(titleOf(props.tab), titleWidth())}
           </text>
           <box flexGrow={1} />
+          <Show when={showCount()}>
+            <text selectable={false} fg={theme().text.muted}>{countLabel()}</text>
+          </Show>
           <Show when={showKeys()}>
             <text selectable={false} fg={armed() ? theme().hue.accent[200] : theme().text.muted}>{keys() + " "}</text>
           </Show>
@@ -996,21 +1059,65 @@ function BetterTabs() {
   }
 
   const NEW_GROUP = "\u0000new"
+  const ATTACH = "\u0000attach"
+  const DETACH = "\u0000detach"
 
-  // Right-click on a tab, or /group without a name.
+  // Sub-sessions --------------------------------------------------------------------------------
+
+  const setParent = (sessionID: string, parent: string | null) =>
+    void update((draft) => {
+      draft.parents ??= {}
+      draft.parents[sessionID] = parent
+    })
+      .then(() => toast(parent ? `Attached to ${titleOf({ sessionID: parent })}` : "Detached; it is a normal tab again"))
+      .catch(fail)
+
+  // Any top-level tab outside the tab's own family can be its parent.
+  const pickParent = async (tab: Tab) => {
+    const family = familyOf(tab.sessionID)
+    const options = groups().flatMap((group) =>
+      group.tabs
+        .filter((item) => !family.includes(item.sessionID) && !parents().has(item.sessionID))
+        .map((item) => ({ title: titleOf(item), value: item.sessionID, category: group.name })),
+    )
+    if (!options.length) return toast("Open another tab first, then attach this one to it", "warning")
+    const selected = await ctx.ui.dialog.select({ title: `Attach “${titleOf(tab)}” to`, placeholder: "Search tabs", options })
+    if (selected) setParent(tab.sessionID, selected)
+  }
+
+  const attachCurrent = async () => {
+    const current = activeTab()
+    if (!current) return toast("Open a tab first", "warning")
+    return pickParent(current)
+  }
+
+  const detachCurrent = () => {
+    const current = activeTab()
+    if (!current) return toast("Open a tab first", "warning")
+    if (!parents().has(current.sessionID)) return toast("This tab is not a sub-session", "warning")
+    setParent(current.sessionID, null)
+  }
+
+  // Right-click on a tab, or /group without a name. A sub-session follows its parent, so it has no group of its own.
   const openTabMenu = async (tab: Tab) => {
     const current = customMap()[tab.sessionID]
-    const options = [
-      ...customNames().map((name) => ({ title: name, value: name, category: "Move to group" })),
-      { title: "New group…", value: NEW_GROUP, category: "Move to group" },
-      ...(current ? [{ title: "Remove from group", value: UNGROUPED, category: "Move to group" }] : []),
-    ]
+    const parent = parents().get(tab.sessionID)
+    const options = parent
+      ? [{ title: `Detach from ${titleOf({ sessionID: parent })}`, value: DETACH, category: "Sub-session" }]
+      : [
+          ...customNames().map((name) => ({ title: name, value: name, category: "Move to group" })),
+          { title: "New group…", value: NEW_GROUP, category: "Move to group" },
+          ...(current ? [{ title: "Remove from group", value: UNGROUPED, category: "Move to group" }] : []),
+          { title: "Attach to a tab…", value: ATTACH, category: "Sub-session" },
+        ]
     const selected = await ctx.ui.dialog.select({
       title: titleOf(tab),
       options,
-      current: grouping() === "custom" ? current : undefined,
+      current: grouping() === "custom" && !parent ? current : undefined,
     })
     if (selected === undefined) return
+    if (selected === DETACH) return setParent(tab.sessionID, null)
+    if (selected === ATTACH) return pickParent(tab)
     const name = selected === NEW_GROUP ? await askName("New group", nextGroupName()) : selected
     if (name) assignGroup([tab.sessionID], name)
   }
@@ -1059,6 +1166,8 @@ function BetterTabs() {
   const groupCurrent = async (input?: string) => {
     const current = activeTab()
     if (!current) return toast("Open a tab first, then move it to a group", "warning")
+    if (input?.trim() && parents().has(current.sessionID))
+      return toast("A sub-session stays with its parent; use /detach first", "warning")
     if (input?.trim()) return assignGroup([current.sessionID], input)
     return openTabMenu(current)
   }
@@ -1079,7 +1188,7 @@ function BetterTabs() {
   const openPicker = async () => {
     const options = groups().flatMap((group, position) =>
       group.tabs.map((tab, index) => ({
-        title: titleOf(tab),
+        title: (parents().has(tab.sessionID) ? "└ " : "") + titleOf(tab),
         value: tab.sessionID,
         category: group.name,
         footer:
@@ -1170,6 +1279,22 @@ function BetterTabs() {
         palette: true,
         slash: { name: "ungroup" },
         run: ungroupCurrent,
+      },
+      {
+        id: "better-tabs.attach",
+        title: "Attach current tab to another tab",
+        group: "Better tabs",
+        palette: true,
+        slash: { name: "attach" },
+        run: () => void attachCurrent().catch(fail),
+      },
+      {
+        id: "better-tabs.detach",
+        title: "Detach current tab from its parent",
+        group: "Better tabs",
+        palette: true,
+        slash: { name: "detach" },
+        run: detachCurrent,
       },
       {
         id: "better-tabs.autogroup",

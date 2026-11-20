@@ -37,6 +37,8 @@ to the top and a tab within its group, collapsing a group, closing a tab with it
   `alt+↑` / `alt+↓`. The order is saved and the built-in tab order follows it.
 - **Reorder tabs** inside an expanded group by dragging them with the mouse.
 - **Custom groups**, as a second way to group tabs. See [Custom groups](#custom-groups).
+- **Sub-sessions** sit indented and dimmed under their parent tab, even when they come from another repository.
+  See [Sub-sessions](#sub-sessions).
 - **Sort by recent activity** with the `sort` option: the group and the tab where you last sent a message move to
   the top.
 - **Close tabs** with the `✕` that appears on hover, or with a middle click.
@@ -59,6 +61,21 @@ Your custom groups are saved, so you can switch back and forth.
 - **Rename or remove a group** with a right-click on its header, or pick it in `/groups`. Removing a group moves its
   tabs to `Ungrouped`.
 - Tabs that are in no group sit in `Ungrouped`, which always stays last. `/ungroup` moves the current tab there.
+
+## Sub-sessions
+
+A tab can hold sub-sessions: other tabs shown right under it, indented with `└` and in a dimmer colour. The parent
+shows how many it has, such as `+2`.
+
+- **Where they come from.** A session that OpenCode started for another one (its `parentID`) is a sub-session
+  automatically. An agent can attach a session to its own with the `better_tabs_attach` tool, for example one it
+  just started. You can attach a tab yourself with a right-click (`Attach to a tab…`) or `/attach`.
+- **Groups.** Only parent tabs belong to a group. A sub-session always follows its parent, in repository and in
+  custom groups. Its own custom group is kept and comes back when you detach it.
+- **Detach** with a right-click on the sub-session or `/detach`. Closing the parent tab also turns its sub-sessions
+  into normal tabs in their own groups.
+- Dragging a parent moves its sub-sessions with it. Sub-sessions themselves are not dragged. Only one level is
+  shown: a sub-session of a sub-session sits under the top parent.
 
 ## Requirements
 
@@ -103,7 +120,9 @@ opencode plugin remove github:igorovh/opencode-better-tabs#v0.6.0
 | | `/groups` | List custom groups, rename or remove one, and switch between repository and custom groups |
 | | `/group <name>` | Move the current tab to a custom group; without a name, pick one from a list |
 | | `/ungroup` | Move the current tab back to `Ungrouped` |
-| right-click a tab | | Move the tab to a custom group |
+| | `/attach` | Show the current tab as a sub-session under another tab |
+| | `/detach` | Show the current sub-session as a normal tab again |
+| right-click a tab | | Move the tab to a custom group, or attach or detach it |
 | right-click a group header | | Rename or remove a custom group |
 | | `/close`, `/archive` | Close the current tab (the session is kept) |
 | `<leader>h` | `/tabs-hide` | Show or hide the tab bar |
@@ -115,7 +134,7 @@ OpenCode uses `alt+a/b/d/e/f` to edit the prompt. Groups and the tabs inside a g
 ## Options
 
 The tab bar runs in the TUI, and OpenCode passes plugin options to the TUI only from `~/.config/opencode/cli.json`
-(or `$OPENCODE_CONFIG_DIR/cli.json`). Options in `opencode.jsonc` reach only the server part, which does nothing.
+(or `$OPENCODE_CONFIG_DIR/cli.json`). Options in `opencode.jsonc` reach only the server part, which only adds the `better_tabs_attach` tool and reads no options.
 Add an entry to `cli.json` whose `package` is exactly the same string as in `opencode.jsonc`, tag included:
 
 ```jsonc
@@ -168,6 +187,9 @@ the host's own copies.
 
 - **Hiding** writes `tabs.mode` to `cli.json`. Only that value changes; comments and other settings stay. If
   `OPENCODE_CLI_CONFIG_CONTENT` sets `tabs`, that wins and the toggle has no effect.
+- **Sub-session links** you set in the bar are saved in the plugin's TUI storage. The `better_tabs_attach` tool
+  writes the link to the session's metadata (`betterTabs.parent`) instead, so it also reaches the TUI. A link set in
+  the bar wins over the tool's, and both win over OpenCode's `parentID`.
 - The plugin makes no network requests and runs no commands.
 
 ## Development
