@@ -1418,6 +1418,7 @@ var DEFAULT_MODIFIER = "alt";
 var DEFAULT_CONFIRM_CLOSE = false;
 var DEFAULT_PADDING = 0;
 var DEFAULT_SORT = "manual";
+var DEFAULT_SUB_SESSIONS = true;
 var MAX_PADDING = 3;
 var MODIFIERS = new Set(["alt", "ctrl", "shift", "meta", "super", "hyper"]);
 function readOptions(raw) {
@@ -1459,7 +1460,14 @@ function readOptions(raw) {
     else
       warnings.push(`Ignoring sort ${JSON.stringify(raw.sort)}; it needs "manual" or "recent"`);
   }
-  return { modifier, slotKeys, confirmClose, padding, sort, warnings };
+  let subSessions = DEFAULT_SUB_SESSIONS;
+  if (raw?.subSessions !== undefined) {
+    if (typeof raw.subSessions === "boolean")
+      subSessions = raw.subSessions;
+    else
+      warnings.push(`Ignoring subSessions ${JSON.stringify(raw.subSessions)}; it needs true or false`);
+  }
+  return { modifier, slotKeys, confirmClose, padding, sort, subSessions, warnings };
 }
 
 var METADATA_KEY = "betterTabs";
@@ -1572,7 +1580,8 @@ function BetterTabs() {
     modifier,
     slotKeys,
     confirmClose,
-    padding
+    padding,
+    subSessions
   } = options;
   const recent = options.sort === "recent";
   const [awaitedOrder, setAwaitedOrder] = createSignal();
@@ -1713,7 +1722,7 @@ function BetterTabs() {
     const linked = metadataParent(session?.metadata);
     return linked === undefined ? session?.parentID : linked ?? undefined;
   };
-  const parents = createMemo(() => resolveParents(tabs().map((tab) => tab.sessionID), linkOf));
+  const parents = createMemo(() => subSessions ? resolveParents(tabs().map((tab) => tab.sessionID), linkOf) : new Map);
   const childrenOf = (sessionID) => tabs().filter((tab) => parents().get(tab.sessionID) === sessionID);
   const familyOf = (sessionID) => [sessionID, ...childrenOf(sessionID).map((tab) => tab.sessionID)];
   const orderedGroups = createMemo(() => {
@@ -2332,7 +2341,7 @@ function BetterTabs() {
     const indent = () => sub() ? 2 : 0;
     const countLabel = () => {
       const count = sub() ? 0 : childrenOf(props.tab.sessionID).length;
-      return count ? `+${count} ` : "";
+      return count ? ` +${count}` : "";
     };
     let row;
     onCleanup(() => {
@@ -2421,22 +2430,22 @@ function BetterTabs() {
             _$insert(_el$16, () => truncate(titleOf(props.tab), titleWidth()));
             _$effect((_$p) => _$setProp(_el$16, "fg", sub() ? subTitleColor() : titleColor(), _$p));
             return _el$16;
-          })(), (() => {
-            var _el$17 = _$createElement("box");
-            _$setProp(_el$17, "flexGrow", 1);
-            return _el$17;
           })(), _$createComponent(Show, {
             get when() {
               return showCount();
             },
             get children() {
-              var _el$18 = _$createElement("text");
-              _$setProp(_el$18, "selectable", false);
-              _$insert(_el$18, countLabel);
-              _$effect((_$p) => _$setProp(_el$18, "fg", theme().text.muted, _$p));
-              return _el$18;
+              var _el$17 = _$createElement("text");
+              _$setProp(_el$17, "selectable", false);
+              _$insert(_el$17, countLabel);
+              _$effect((_$p) => _$setProp(_el$17, "fg", theme().text.muted, _$p));
+              return _el$17;
             }
-          }), _$createComponent(Show, {
+          }), (() => {
+            var _el$18 = _$createElement("box");
+            _$setProp(_el$18, "flexGrow", 1);
+            return _el$18;
+          })(), _$createComponent(Show, {
             get when() {
               return showKeys();
             },
@@ -2805,11 +2814,11 @@ function BetterTabs() {
       title: "Remove from group",
       value: UNGROUPED,
       category: "Move to group"
-    }] : [], {
+    }] : [], ...subSessions ? [{
       title: "Attach to a tab\u2026",
       value: ATTACH,
       category: "Sub-session"
-    }];
+    }] : []];
     const selected = await ctx.ui.dialog.select({
       title: titleOf(tab),
       options,
@@ -2933,6 +2942,25 @@ function BetterTabs() {
     if (selected)
       focus(selected);
   };
+  const subSessionCommands = [{
+    id: "better-tabs.attach",
+    title: "Attach current tab to another tab",
+    group: "Better tabs",
+    palette: true,
+    slash: {
+      name: "attach"
+    },
+    run: () => void attachCurrent().catch(fail)
+  }, {
+    id: "better-tabs.detach",
+    title: "Detach current tab from its parent",
+    group: "Better tabs",
+    palette: true,
+    slash: {
+      name: "detach"
+    },
+    run: detachCurrent
+  }];
   ctx.keymap.layer(() => ({
     mode: "global",
     commands: [{
@@ -3013,25 +3041,7 @@ function BetterTabs() {
         name: "ungroup"
       },
       run: ungroupCurrent
-    }, {
-      id: "better-tabs.attach",
-      title: "Attach current tab to another tab",
-      group: "Better tabs",
-      palette: true,
-      slash: {
-        name: "attach"
-      },
-      run: () => void attachCurrent().catch(fail)
-    }, {
-      id: "better-tabs.detach",
-      title: "Detach current tab from its parent",
-      group: "Better tabs",
-      palette: true,
-      slash: {
-        name: "detach"
-      },
-      run: detachCurrent
-    }, {
+    }, ...subSessions ? subSessionCommands : [], {
       id: "better-tabs.autogroup",
       title: "Toggle automatic tab grouping",
       group: "Better tabs",

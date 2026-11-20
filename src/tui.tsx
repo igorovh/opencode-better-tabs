@@ -97,7 +97,7 @@ function BetterTabs() {
 
   const options = readOptions(ctx.options)
   for (const warning of options.warnings) toast(warning, "warning")
-  const { modifier, slotKeys, confirmClose, padding } = options
+  const { modifier, slotKeys, confirmClose, padding, subSessions } = options
   // Dragging is off in recent mode: activity would undo any manual move at once.
   const recent = options.sort === "recent"
 
@@ -234,7 +234,9 @@ function BetterTabs() {
     const linked = metadataParent(session?.metadata)
     return linked === undefined ? session?.parentID : (linked ?? undefined)
   }
-  const parents = createMemo(() => resolveParents(tabs().map((tab) => tab.sessionID), linkOf))
+  const parents = createMemo(() =>
+    subSessions ? resolveParents(tabs().map((tab) => tab.sessionID), linkOf) : new Map<string, string>(),
+  )
   const childrenOf = (sessionID: string) => tabs().filter((tab) => parents().get(tab.sessionID) === sessionID)
   const familyOf = (sessionID: string) => [sessionID, ...childrenOf(sessionID).map((tab) => tab.sessionID)]
 
@@ -779,7 +781,7 @@ function BetterTabs() {
     const indent = () => (sub() ? 2 : 0)
     const countLabel = () => {
       const count = sub() ? 0 : childrenOf(props.tab.sessionID).length
-      return count ? `+${count} ` : ""
+      return count ? ` +${count}` : ""
     }
     let row: BoxRenderable | undefined
     onCleanup(() => {
@@ -841,10 +843,10 @@ function BetterTabs() {
           <text selectable={false} fg={sub() ? subTitleColor() : titleColor()}>
             {truncate(titleOf(props.tab), titleWidth())}
           </text>
-          <box flexGrow={1} />
           <Show when={showCount()}>
             <text selectable={false} fg={theme().text.muted}>{countLabel()}</text>
           </Show>
+          <box flexGrow={1} />
           <Show when={showKeys()}>
             <text selectable={false} fg={armed() ? theme().hue.accent[200] : theme().text.muted}>{keys() + " "}</text>
           </Show>
@@ -1148,7 +1150,7 @@ function BetterTabs() {
           ...customNames().map((name) => ({ title: name, value: name, category: "Move to group" })),
           { title: "New group…", value: NEW_GROUP, category: "Move to group" },
           ...(current ? [{ title: "Remove from group", value: UNGROUPED, category: "Move to group" }] : []),
-          { title: "Attach to a tab…", value: ATTACH, category: "Sub-session" },
+          ...(subSessions ? [{ title: "Attach to a tab…", value: ATTACH, category: "Sub-session" }] : []),
         ]
     const selected = await ctx.ui.dialog.select({
       title: titleOf(tab),
@@ -1244,6 +1246,25 @@ function BetterTabs() {
     if (selected) focus(selected)
   }
 
+  const subSessionCommands = [
+    {
+      id: "better-tabs.attach",
+      title: "Attach current tab to another tab",
+      group: "Better tabs",
+      palette: true,
+      slash: { name: "attach" },
+      run: () => void attachCurrent().catch(fail),
+    },
+    {
+      id: "better-tabs.detach",
+      title: "Detach current tab from its parent",
+      group: "Better tabs",
+      palette: true,
+      slash: { name: "detach" },
+      run: detachCurrent,
+    },
+  ] as const
+
   // Slash completion runs while the prompt has focus, which only global layers reach.
   ctx.keymap.layer(() => ({
     mode: "global",
@@ -1320,22 +1341,7 @@ function BetterTabs() {
         slash: { name: "ungroup" },
         run: ungroupCurrent,
       },
-      {
-        id: "better-tabs.attach",
-        title: "Attach current tab to another tab",
-        group: "Better tabs",
-        palette: true,
-        slash: { name: "attach" },
-        run: () => void attachCurrent().catch(fail),
-      },
-      {
-        id: "better-tabs.detach",
-        title: "Detach current tab from its parent",
-        group: "Better tabs",
-        palette: true,
-        slash: { name: "detach" },
-        run: detachCurrent,
-      },
+      ...(subSessions ? subSessionCommands : []),
       {
         id: "better-tabs.autogroup",
         title: "Toggle automatic tab grouping",

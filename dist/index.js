@@ -35,6 +35,8 @@ function resolveParents(open, linkOf) {
 var src_default = Plugin.define({
   id: "better-tabs.server",
   async setup(ctx) {
+    if (ctx.options?.subSessions === false)
+      return;
     const registration = await ctx.tool.transform((tools) => tools.add({
       name: "better_tabs_attach",
       description: "Show another session as a sub-session under this session in the tab bar, for example a session you " + "just started for part of your task. Pass detach: true to show it as a normal tab again.",

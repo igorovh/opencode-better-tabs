@@ -65,7 +65,8 @@ Your custom groups are saved, so you can switch back and forth.
 ## Sub-sessions
 
 A tab can hold sub-sessions: other tabs shown right under it, indented with `└` and in a dimmer colour. The parent
-shows how many it has, such as `+2`.
+shows how many it has right after its title, such as `Fix the login redirect +2`. Sub-sessions are on by default;
+turn them off with the [`subSessions` option](#options).
 
 - **Where they come from.** A session that OpenCode started for another one (its `parentID`) is a sub-session
   automatically. An agent can attach a session to its own with the `better_tabs_attach` tool, for example one it
@@ -134,7 +135,8 @@ OpenCode uses `alt+a/b/d/e/f` to edit the prompt. Groups and the tabs inside a g
 ## Options
 
 The tab bar runs in the TUI, and OpenCode passes plugin options to the TUI only from `~/.config/opencode/cli.json`
-(or `$OPENCODE_CONFIG_DIR/cli.json`). Options in `opencode.jsonc` reach only the server part, which only adds the `better_tabs_attach` tool and reads no options.
+(or `$OPENCODE_CONFIG_DIR/cli.json`). Options in `opencode.jsonc` reach only the server part, which only adds the
+`better_tabs_attach` tool; the only option it reads is `subSessions: false`, which leaves the tool out.
 Add an entry to `cli.json` whose `package` is exactly the same string as in `opencode.jsonc`, tag included:
 
 ```jsonc
@@ -161,6 +163,9 @@ Add an entry to `cli.json` whose `package` is exactly the same string as in `ope
 - `sort`: `"manual"` (default) keeps the order you set by dragging. `"recent"` puts the group and the tab whose
   session last started working first, so a tab moves once when you send a message, not while it works. Tabs that
   never ran count from when they were created. Dragging and `alt+↑` / `alt+↓` are off in this mode.
+- `subSessions`: show sub-sessions under their parent tab. Default `true`. Set it to `false` to show every tab in
+  its own group and hide `/attach`, `/detach` and the attach item in the tab menu. To also remove the agent's
+  `better_tabs_attach` tool, set the same option on the plugin entry in `opencode.jsonc`.
 
 To change or turn off a command shortcut, set its command ID under `keybinds` in the same `cli.json`. Use `"none"`
 to turn it off:

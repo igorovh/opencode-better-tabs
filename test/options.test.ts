@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { DEFAULT_CONFIRM_CLOSE, DEFAULT_KEYS, DEFAULT_PADDING, DEFAULT_SORT, readOptions } from "../src/options"
+import { DEFAULT_CONFIRM_CLOSE, DEFAULT_KEYS, DEFAULT_PADDING, DEFAULT_SORT, DEFAULT_SUB_SESSIONS, readOptions } from "../src/options"
 
 test("defaults to alt, the built-in key pool, no close confirmation and unpadded rows", () => {
   expect(readOptions({})).toEqual({
@@ -8,6 +8,7 @@ test("defaults to alt, the built-in key pool, no close confirmation and unpadded
     confirmClose: DEFAULT_CONFIRM_CLOSE,
     padding: DEFAULT_PADDING,
     sort: DEFAULT_SORT,
+    subSessions: DEFAULT_SUB_SESSIONS,
     warnings: [],
   })
 })
@@ -54,4 +55,11 @@ test("reads sort and rejects unsupported values", () => {
     expect(options.sort).toBe(DEFAULT_SORT)
     expect(options.warnings).toHaveLength(1)
   }
+})
+
+test("reads subSessions and rejects values that are not booleans", () => {
+  expect(readOptions({ subSessions: false }).subSessions).toBe(false)
+  const options = readOptions({ subSessions: "no" })
+  expect(options.subSessions).toBe(true)
+  expect(options.warnings).toHaveLength(1)
 })

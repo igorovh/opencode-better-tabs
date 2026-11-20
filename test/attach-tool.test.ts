@@ -3,10 +3,11 @@ import compiledServer from "../dist/index.js"
 import sourceServer from "../src/index"
 import { METADATA_KEY } from "../src/sub-sessions"
 
-const setup = async (plugin: typeof sourceServer) => {
+const setup = async (plugin: typeof sourceServer, options: Record<string, unknown> = {}) => {
   const metadata: Record<string, Record<string, unknown>> = { ses_child: { kept: true } }
   let tool: any
   const ctx: any = {
+    options,
     tool: { transform: async (edit: (tools: any) => void) => (edit({ add: (info: any) => (tool = info) }), { dispose: async () => {} }) },
     session: {
       get: async ({ sessionID }: { sessionID: string }) => ({ id: sessionID, metadata: metadata[sessionID] }),
@@ -32,3 +33,8 @@ for (const [name, plugin] of [
     expect(self.content).toContain("cannot")
   })
 }
+
+test("subSessions: false in opencode.jsonc leaves the attach tool out", async () => {
+  const { tool } = await setup(sourceServer, { subSessions: false })
+  expect(tool).toBeUndefined()
+})

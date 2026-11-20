@@ -5,6 +5,8 @@ import { METADATA_KEY } from "./sub-sessions"
 export default Plugin.define({
   id: "better-tabs.server",
   async setup(ctx) {
+    // The server reads its options from opencode.jsonc, not from the TUI's cli.json.
+    if (ctx.options?.subSessions === false) return
     const registration = await ctx.tool.transform((tools) =>
       tools.add({
         name: "better_tabs_attach",

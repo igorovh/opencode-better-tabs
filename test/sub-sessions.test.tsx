@@ -91,9 +91,20 @@ for (const [name, plugin] of [
       expect(tabsInFrame(frame)).toEqual(["alpha1", "beta1", "alpha2", "beta2"])
       expect(rowOf(frame, "beta 1")).toBe(rowOf(frame, "alpha 1") + 1)
       expect(lineOf(frame, "beta 1")).toContain("└")
-      expect(lineOf(frame, "alpha 1")).toContain("+1")
+      expect(lineOf(frame, "alpha 1")).toContain("alpha 1 +1")
       expect(rowOf(frame, "beta 1")).toBeLessThan(rowOf(frame, "▾ beta"))
       expect(tui.hostOrder()).toEqual(["alpha1", "beta1", "alpha2", "beta2"])
+    })
+
+    test("the subSessions option turns sub-sessions off", async () => {
+      init(allIDs)
+      const tui = await start({ sessions: withParent("beta1", { parentID: "alpha1" }), options: { subSessions: false } })
+      await settle(tui)
+      const frame = await tui.frame()
+      expect(lineOf(frame, "beta 1")).not.toContain("└")
+      expect(lineOf(frame, "alpha 1")).not.toContain("+1")
+      expect(rowOf(frame, "beta 1")).toBeGreaterThan(rowOf(frame, "▾ beta"))
+      expect(() => tui.command("better-tabs.attach")).toThrow()
     })
 
     test("the agent's metadata link works, and a detach in the bar overrides it", async () => {
