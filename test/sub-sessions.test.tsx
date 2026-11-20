@@ -159,6 +159,16 @@ for (const [name, plugin] of [
       expect(tui.toasts.at(-1)).toContain("/detach")
     })
 
+    test("/ungroup keeps a sub-session's own group for after it is detached", async () => {
+      init(allIDs, state({ grouping: "custom", customGroups: { beta1: "Blue" } }))
+      const tui = await start({ sessions: withParent("beta1", { parentID: "alpha1" }), tabState: { beta1: { active: true } } })
+      await settle(tui)
+      await tui.command("better-tabs.ungroup")
+      await settle(tui)
+      expect(readJson(dir, "state").customGroups.beta1).toBe("Blue")
+      expect(tui.toasts.at(-1)).toContain("/detach")
+    })
+
     test("the tab menu attaches a tab to another one", async () => {
       init(allIDs)
       const tui = await start({

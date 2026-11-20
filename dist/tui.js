@@ -2916,6 +2916,8 @@ function BetterTabs() {
     const current = activeTab();
     if (!current)
       return toast("Open a tab first", "warning");
+    if (parents().has(current.sessionID))
+      return toast("A sub-session stays with its parent; use /detach first", "warning");
     if (!customMap()[current.sessionID])
       return toast("This tab is not in a custom group", "warning");
     assignGroup([current.sessionID], UNGROUPED);
