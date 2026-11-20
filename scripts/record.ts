@@ -170,7 +170,9 @@ try {
   try {
     const started = Date.now()
     await page.goto(`http://127.0.0.1:${ttydPort}`)
-    await until("the tab bar", async () => (await screenLines(page)).some((line) => line.includes("New session")) || undefined)
+    // With many sessions the "New session" row sits below the bar, but the first group's shortcut still shows.
+    const shown = (line: string) => line.includes("New session") || line.includes("alt+1")
+    await until("the tab bar", async () => (await screenLines(page)).some(shown) || undefined)
     await sleep(1500)
     ready = (Date.now() - started) / 1000
     for (const step of steps) {

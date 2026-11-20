@@ -3,7 +3,7 @@ import { existsSync } from "node:fs"
 import path from "node:path"
 import { Plugin, usePlugin } from "@opencode/plugin/tui"
 import type { Context } from "@opencode/plugin/tui/context"
-import { RGBA, type BoxRenderable, type MouseEvent, type Renderable } from "@opentui/core"
+import { RGBA, type BoxRenderable, type MouseEvent, type Renderable, type ScrollBoxRenderable } from "@opentui/core"
 import { Portal } from "@opentui/solid"
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, untrack } from "solid-js"
 import {
@@ -23,6 +23,8 @@ const CHORD_TIMEOUT = 3000
 // How far tab titles lean from the base text colour towards the muted one.
 const TITLE_DIM = 0.2
 const MIN_GROUP_NAME = 6
+// The "and N more sessions" line and the blank line above it.
+const MORE_HEIGHT = 2
 // Older OpenCode builds file sessions outside any repository under this shared project ID.
 const GLOBAL_PROJECT = "global"
 // Ticks of the 100 ms timer between checks for a `.git` created after startup.
@@ -462,6 +464,7 @@ function BetterTabs() {
     measure()
     if (anyBusy()) setTick((value) => (value + 1) % SPINNER.length)
     if (++ticks % GIT_RECHECK_TICKS === 0) recheckGit()
+    countHidden()
   }, 100)
   onCleanup(() => clearInterval(timer))
 
@@ -834,6 +837,45 @@ function BetterTabs() {
       <Show when={tab()}>
         <TabRow tab={tab()!} groupKey={props.group.key} position={Math.max(0, position())} />
       </Show>
+    )
+  }
+
+  // Tab rows below the visible part of the bar; while any exist, the bar's last line counts them.
+  let scroller: ScrollBoxRenderable | undefined
+  const [hiddenBelow, setHiddenBelow] = createSignal(0)
+  const countHidden = () => {
+    if (!scroller || scroller.isDestroyed) return
+    const bottom = scroller.screenY + geometry().height
+    const ends = [...tabRows.values()].filter((row) => !row.isDestroyed).map((row) => row.screenY + row.height)
+    // Checked against the whole bar first, so the line cannot hide the only row that made it appear.
+    const count = ends.some((end) => end > bottom) ? ends.filter((end) => end > bottom - MORE_HEIGHT).length : 0
+    if (count !== hiddenBelow()) setHiddenBelow(count)
+  }
+
+  function MoreRow() {
+    const label = () => {
+      const count = hiddenBelow()
+      if (narrow()) return `+${count}`
+      return truncate(`and ${count} more ${count === 1 ? "session" : "sessions"}`, innerWidth())
+    }
+    return (
+      <box
+        flexDirection="row"
+        justifyContent="center"
+        height={1}
+        flexShrink={0}
+        backgroundColor={rowBackground("more", false)}
+        onMouseOver={() => setHovered("more")}
+        onMouseOut={() => setHovered(undefined)}
+        onMouseUp={(event: MouseEvent) =>
+          click(event, () => {
+            scroller?.scrollBy(1, "viewport")
+            scroller?.afterLayout(countHidden)
+          })
+        }
+      >
+        <text selectable={false} fg={theme().text.muted}>{label()}</text>
+      </box>
     )
   }
 
@@ -1254,7 +1296,12 @@ function BetterTabs() {
               onMouseDragEnd={() => finishDrag()}
               onMouseUp={() => finishDrag()}
             >
-              <scrollbox flexGrow={1} minHeight={0} scrollbarOptions={{ visible: false }}>
+              <scrollbox
+                ref={(element: ScrollBoxRenderable) => (scroller = element)}
+                flexGrow={1}
+                minHeight={0}
+                scrollbarOptions={{ visible: false }}
+              >
                 <box flexDirection="column" flexShrink={0} paddingTop={1}>
                   <For each={groupKeys()}>
                     {(key, position) => <GroupBlock groupKey={key} position={position()} />}
@@ -1263,6 +1310,10 @@ function BetterTabs() {
                   <NewSessionRow />
                 </box>
               </scrollbox>
+              <Show when={hiddenBelow() > 0}>
+                <box height={MORE_HEIGHT - 1} flexShrink={0} />
+                <MoreRow />
+              </Show>
             </box>
           </Portal>
         )}
