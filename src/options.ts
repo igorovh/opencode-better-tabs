@@ -9,6 +9,8 @@ export const DEFAULT_PADDING = 0
 // "recent" puts the latest activity first; "manual" keeps the order set by dragging.
 export type Sort = "manual" | "recent"
 export const DEFAULT_SORT: Sort = "manual"
+// Sub-sessions show under their parent tab unless turned off.
+export const DEFAULT_SUB_SESSIONS = true
 const MAX_PADDING = 3
 const MODIFIERS = new Set(["alt", "ctrl", "shift", "meta", "super", "hyper"])
 
@@ -18,6 +20,7 @@ export type Options = {
   confirmClose: boolean
   padding: number
   sort: Sort
+  subSessions: boolean
   warnings: string[]
 }
 
@@ -51,5 +54,10 @@ export function readOptions(raw: Record<string, unknown> | undefined): Options {
     if (raw.sort === "manual" || raw.sort === "recent") sort = raw.sort
     else warnings.push(`Ignoring sort ${JSON.stringify(raw.sort)}; it needs "manual" or "recent"`)
   }
-  return { modifier, slotKeys, confirmClose, padding, sort, warnings }
+  let subSessions = DEFAULT_SUB_SESSIONS
+  if (raw?.subSessions !== undefined) {
+    if (typeof raw.subSessions === "boolean") subSessions = raw.subSessions
+    else warnings.push(`Ignoring subSessions ${JSON.stringify(raw.subSessions)}; it needs true or false`)
+  }
+  return { modifier, slotKeys, confirmClose, padding, sort, subSessions, warnings }
 }

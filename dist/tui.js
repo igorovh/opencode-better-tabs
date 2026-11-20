@@ -1418,6 +1418,7 @@ var DEFAULT_MODIFIER = "alt";
 var DEFAULT_CONFIRM_CLOSE = false;
 var DEFAULT_PADDING = 0;
 var DEFAULT_SORT = "manual";
+var DEFAULT_SUB_SESSIONS = true;
 var MAX_PADDING = 3;
 var MODIFIERS = new Set(["alt", "ctrl", "shift", "meta", "super", "hyper"]);
 function readOptions(raw) {
@@ -1459,12 +1460,51 @@ function readOptions(raw) {
     else
       warnings.push(`Ignoring sort ${JSON.stringify(raw.sort)}; it needs "manual" or "recent"`);
   }
-  return { modifier, slotKeys, confirmClose, padding, sort, warnings };
+  let subSessions = DEFAULT_SUB_SESSIONS;
+  if (raw?.subSessions !== undefined) {
+    if (typeof raw.subSessions === "boolean")
+      subSessions = raw.subSessions;
+    else
+      warnings.push(`Ignoring subSessions ${JSON.stringify(raw.subSessions)}; it needs true or false`);
+  }
+  return { modifier, slotKeys, confirmClose, padding, sort, subSessions, warnings };
+}
+
+var METADATA_KEY = "betterTabs";
+function metadataParent(metadata) {
+  if (!metadata || typeof metadata !== "object")
+    return;
+  const entry = metadata[METADATA_KEY];
+  if (!entry || typeof entry !== "object")
+    return;
+  const parent = entry.parent;
+  return typeof parent === "string" || parent === null ? parent : undefined;
+}
+function resolveParents(open, linkOf) {
+  const isOpen = new Set(open);
+  const result = new Map;
+  for (const sessionID of open) {
+    const seen = new Set([sessionID]);
+    let root;
+    let cycle = false;
+    for (let id = linkOf(sessionID);id !== undefined && isOpen.has(id); id = linkOf(id)) {
+      if (seen.has(id)) {
+        cycle = true;
+        break;
+      }
+      seen.add(id);
+      root = id;
+    }
+    if (root && !cycle)
+      result.set(sessionID, root);
+  }
+  return result;
 }
 
 var NARROW_BREAKPOINT = 12;
 var CHORD_TIMEOUT = 3000;
 var TITLE_DIM = 0.2;
+var SUB_TITLE_DIM = 0.6;
 var MIN_GROUP_NAME = 6;
 var GLOBAL_PROJECT = "global";
 var GIT_RECHECK_TICKS = 50;
@@ -1518,7 +1558,8 @@ function BetterTabs() {
       restoreMode: "auto",
       groupOrder: [],
       grouping: "repo",
-      customGroups: {}
+      customGroups: {},
+      parents: {}
     }
   });
   const [memory, setMemory] = ctx.storage.memory("memory", {
@@ -1539,7 +1580,8 @@ function BetterTabs() {
     modifier,
     slotKeys,
     confirmClose,
-    padding
+    padding,
+    subSessions
   } = options;
   const recent = options.sort === "recent";
   const [awaitedOrder, setAwaitedOrder] = createSignal();
@@ -1672,14 +1714,33 @@ function BetterTabs() {
       noGit: false
     };
   };
+  const linkOf = (sessionID) => {
+    const own = state.parents?.[sessionID];
+    if (own !== undefined)
+      return own ?? undefined;
+    const session = ctx.data.session.get(sessionID);
+    const linked = metadataParent(session?.metadata);
+    return linked === undefined ? session?.parentID : linked ?? undefined;
+  };
+  const parents = createMemo(() => subSessions ? resolveParents(tabs().map((tab) => tab.sessionID), linkOf) : new Map);
+  const childrenOf = (sessionID) => tabs().filter((tab) => parents().get(tab.sessionID) === sessionID);
+  const familyOf = (sessionID) => [sessionID, ...childrenOf(sessionID).map((tab) => tab.sessionID)];
   const orderedGroups = createMemo(() => {
     const order = localOrder() ?? state.groupOrder ?? [];
     const rank = (key) => {
       const index = order.indexOf(key);
       return index === -1 ? order.length : index;
     };
-    const keyOf = new Map;
+    const links = parents();
+    const roots = tabs().filter((tab) => !links.has(tab.sessionID));
+    const children = new Map;
     for (const tab of tabs()) {
+      const parent = links.get(tab.sessionID);
+      if (parent)
+        children.set(parent, [...children.get(parent) ?? [], tab]);
+    }
+    const keyOf = new Map;
+    for (const tab of roots) {
       const info = groupOf(tab.sessionID);
       if (!info)
         continue;
@@ -1689,7 +1750,7 @@ function BetterTabs() {
         keyOf.set(info.folder, info.key);
     }
     const result = new Map;
-    for (const tab of tabs()) {
+    for (const tab of roots) {
       if (grouping() === "custom") {
         const info = customInfo(tab.sessionID);
         const group = result.get(info.key) ?? {
@@ -1717,9 +1778,16 @@ function BetterTabs() {
       result.set(key, group);
     }
     const list = [...result.values()];
-    if (recent)
-      for (const group of list)
-        group.tabs.sort((left, right) => activityOf(right.sessionID) - activityOf(left.sessionID));
+    const byActivity = (left, right) => activityOf(right.sessionID) - activityOf(left.sessionID);
+    const familyActivity = (tab) => Math.max(activityOf(tab.sessionID), ...(children.get(tab.sessionID) ?? []).map((child) => activityOf(child.sessionID)));
+    for (const group of list) {
+      if (recent)
+        group.tabs.sort((left, right) => familyActivity(right) - familyActivity(left));
+      group.tabs = group.tabs.flatMap((tab) => {
+        const family = children.get(tab.sessionID) ?? [];
+        return [tab, ...recent ? [...family].sort(byActivity) : family];
+      });
+    }
     const last = (group) => group.key === UNGROUPED_KEY ? 1 : 0;
     return list.sort((left, right) => last(left) - last(right) || recent && groupActivity(right) - groupActivity(left) || rank(left.key) - rank(right.key));
   });
@@ -1739,16 +1807,22 @@ function BetterTabs() {
     const source = list.find((group) => group.tabs.some((tab) => tab.sessionID === dragged.sessionID));
     if (!source || source.key !== dragged.targetGroup || source.key === UNGROUPED_KEY)
       return list;
+    const family = familyOf(dragged.sessionID);
     return list.map((group) => {
       if (group.key !== source.key)
         return group;
-      const from = group.tabs.findIndex((tab) => tab.sessionID === dragged.sessionID);
       return {
         ...group,
-        tabs: moveItem(group.tabs, from, dragged.target)
+        tabs: moveFamily(group.tabs, family, dragged.target)
       };
     });
   });
+  const moveFamily = (items, family, to) => {
+    const rest = items.filter((item) => !family.includes(item.sessionID));
+    const block = items.filter((item) => family.includes(item.sessionID));
+    rest.splice(Math.max(0, Math.min(to, rest.length)), 0, ...block);
+    return rest;
+  };
   const moveGroup = (key, to) => {
     const list = orderedGroups().map((group) => group.key);
     const from = list.indexOf(key);
@@ -1773,7 +1847,8 @@ function BetterTabs() {
       return;
     if (grouping() === "custom" && target.key !== source.key)
       assignGroup([sessionID], target.name, true);
-    const ids = target.tabs.map((tab) => tab.sessionID).filter((id) => id !== sessionID);
+    const family = familyOf(sessionID);
+    const ids = target.tabs.map((tab) => tab.sessionID).filter((id) => !family.includes(id));
     const at = Math.max(0, Math.min(to, ids.length));
     const next = [...ids.slice(0, at), sessionID, ...ids.slice(at)];
     const position = next.indexOf(sessionID);
@@ -1929,7 +2004,11 @@ function BetterTabs() {
     equals: (a, b) => a.length === b.length && a.every((key, index) => key === b[index])
   });
   const groupByKey = (key) => groups().find((group) => group.key === key);
-  const visibleTabIDs = (group) => group.tabs.filter((tab) => !state.collapsed[group.key] || tab.active || pending() === group.key).map((tab) => tab.sessionID);
+  const visibleTabIDs = (group) => {
+    const active = group.tabs.find((tab) => tab.active)?.sessionID;
+    const parent = active && parents().get(active);
+    return group.tabs.filter((tab) => !state.collapsed[group.key] || tab.active || tab.sessionID === parent || pending() === group.key).map((tab) => tab.sessionID);
+  };
   const status = (tab) => {
     const t = theme();
     if (tab.attention)
@@ -2009,6 +2088,7 @@ function BetterTabs() {
   };
   const background = () => theme().background.raised.base;
   const titleColor = createMemo(() => mix(theme().text.base, theme().text.muted, TITLE_DIM));
+  const subTitleColor = createMemo(() => mix(theme().text.base, theme().text.muted, SUB_TITLE_DIM));
   const rowBackground = (id, active) => active ? theme().background.raised.max : hovered() === id ? theme().background.raised.high : background();
   const headers = new Map;
   const dropTarget = (key, y) => orderedGroups().filter((group) => {
@@ -2028,6 +2108,7 @@ function BetterTabs() {
         index: 0
       };
     const custom = grouping() === "custom";
+    const family = familyOf(sessionID);
     let target = list[0] ?? source;
     for (const group of list) {
       const header = headers.get(group.key);
@@ -2047,7 +2128,7 @@ function BetterTabs() {
     else if (target.key === UNGROUPED_KEY) {
       const partner = target.tabs.find((tab) => {
         const row = tabRows.get(tab.sessionID);
-        return tab.sessionID !== sessionID && !!row && !row.isDestroyed && y >= row.screenY && y < row.screenY + row.height;
+        return !family.includes(tab.sessionID) && !parents().has(tab.sessionID) && !!row && !row.isDestroyed && y >= row.screenY && y < row.screenY + row.height;
       });
       if (partner)
         return {
@@ -2057,14 +2138,15 @@ function BetterTabs() {
         };
     }
     const fromAbove = own.screenY < y;
-    const index = target.tabs.filter((tab) => {
-      if (tab.sessionID === sessionID && target.key === source.key)
-        return false;
+    const rest = target.tabs.filter((tab) => !family.includes(tab.sessionID));
+    let index = rest.filter((tab) => {
       const row = tabRows.get(tab.sessionID);
       if (!row || row.isDestroyed)
         return false;
       return fromAbove ? row.screenY <= y : row.screenY + row.height - 1 < y;
     }).length;
+    while (index < rest.length && parents().has(rest[index].sessionID))
+      index++;
     return {
       groupKey: target.key,
       index,
@@ -2253,7 +2335,13 @@ function BetterTabs() {
     const partner = () => !!tabDrag()?.moved && tabDrag()?.partner === props.tab.sessionID;
     const draggable = () => {
       const group = groupByKey(props.groupKey);
-      return !recent && !!group && visibleTabIDs(group).length === group.tabs.length;
+      return !recent && !sub() && !!group && visibleTabIDs(group).length === group.tabs.length;
+    };
+    const sub = () => parents().has(props.tab.sessionID);
+    const indent = () => sub() ? 2 : 0;
+    const countLabel = () => {
+      const count = sub() ? 0 : childrenOf(props.tab.sessionID).length;
+      return count ? ` +${count}` : "";
     };
     let row;
     onCleanup(() => {
@@ -2261,8 +2349,9 @@ function BetterTabs() {
         tabRows.delete(props.tab.sessionID);
     });
     const keys = () => armed() ? slotLabel(props.position) : "";
-    const showKeys = () => keys().length > 0 && innerWidth() - 5 - keys().length - 2 >= 6;
-    const titleWidth = () => innerWidth() - 5 - (showKeys() ? keys().length + 2 : 0);
+    const showKeys = () => keys().length > 0 && innerWidth() - 5 - indent() - keys().length - 2 >= 6;
+    const showCount = () => !!countLabel() && innerWidth() - 5 - (showKeys() ? keys().length + 2 : 0) - countLabel().length >= 6;
+    const titleWidth = () => innerWidth() - 5 - indent() - (showKeys() ? keys().length + 2 : 0) - (showCount() ? countLabel().length : 0);
     const [closeHovered, setCloseHovered] = createSignal(false);
     return (() => {
       var _el$1 = _$createElement("box"), _el$10 = _$createElement("text"), _el$11 = _$createElement("text");
@@ -2308,14 +2397,14 @@ function BetterTabs() {
         },
         get fallback() {
           return (() => {
-            var _el$19 = _$createElement("text");
-            _$setProp(_el$19, "selectable", false);
-            _$insert(_el$19, (() => {
+            var _el$22 = _$createElement("text");
+            _$setProp(_el$22, "selectable", false);
+            _$insert(_el$22, (() => {
               var _c$ = _$memo(() => !!armed());
               return () => _c$() ? slotKeys[props.position] ?? "" : "";
             })());
-            _$effect((_$p) => _$setProp(_el$19, "fg", theme().hue.accent[200], _$p));
-            return _el$19;
+            _$effect((_$p) => _$setProp(_el$22, "fg", theme().hue.accent[200], _$p));
+            return _el$22;
           })();
         },
         get children() {
@@ -2324,42 +2413,64 @@ function BetterTabs() {
             _$insertNode(_el$12, _$createTextNode(` `));
             _$setProp(_el$12, "selectable", false);
             return _el$12;
-          })(), (() => {
-            var _el$14 = _$createElement("text");
-            _$setProp(_el$14, "selectable", false);
-            _$insert(_el$14, () => truncate(titleOf(props.tab), titleWidth()));
-            _$effect((_$p) => _$setProp(_el$14, "fg", titleColor(), _$p));
-            return _el$14;
-          })(), (() => {
-            var _el$15 = _$createElement("box");
-            _$setProp(_el$15, "flexGrow", 1);
-            return _el$15;
+          })(), _$createComponent(Show, {
+            get when() {
+              return sub();
+            },
+            get children() {
+              var _el$14 = _$createElement("text");
+              _$insertNode(_el$14, _$createTextNode(`\u2514 `));
+              _$setProp(_el$14, "selectable", false);
+              _$effect((_$p) => _$setProp(_el$14, "fg", theme().text.muted, _$p));
+              return _el$14;
+            }
+          }), (() => {
+            var _el$16 = _$createElement("text");
+            _$setProp(_el$16, "selectable", false);
+            _$insert(_el$16, () => truncate(titleOf(props.tab), titleWidth()));
+            _$effect((_$p) => _$setProp(_el$16, "fg", sub() ? subTitleColor() : titleColor(), _$p));
+            return _el$16;
+          })(), _$createComponent(Show, {
+            get when() {
+              return showCount();
+            },
+            get children() {
+              var _el$17 = _$createElement("text");
+              _$setProp(_el$17, "selectable", false);
+              _$insert(_el$17, countLabel);
+              _$effect((_$p) => _$setProp(_el$17, "fg", theme().text.muted, _$p));
+              return _el$17;
+            }
+          }), (() => {
+            var _el$18 = _$createElement("box");
+            _$setProp(_el$18, "flexGrow", 1);
+            return _el$18;
           })(), _$createComponent(Show, {
             get when() {
               return showKeys();
             },
             get children() {
-              var _el$16 = _$createElement("text");
-              _$setProp(_el$16, "selectable", false);
-              _$insert(_el$16, () => keys() + " ");
-              _$effect((_$p) => _$setProp(_el$16, "fg", armed() ? theme().hue.accent[200] : theme().text.muted, _$p));
-              return _el$16;
+              var _el$19 = _$createElement("text");
+              _$setProp(_el$19, "selectable", false);
+              _$insert(_el$19, () => keys() + " ");
+              _$effect((_$p) => _$setProp(_el$19, "fg", armed() ? theme().hue.accent[200] : theme().text.muted, _$p));
+              return _el$19;
             }
           }), (() => {
-            var _el$17 = _$createElement("box"), _el$18 = _$createElement("text");
-            _$insertNode(_el$17, _el$18);
-            _$setProp(_el$17, "width", 2);
-            _$setProp(_el$17, "flexShrink", 0);
-            _$setProp(_el$17, "onMouseOver", () => setCloseHovered(true));
-            _$setProp(_el$17, "onMouseOut", () => setCloseHovered(false));
-            _$setProp(_el$17, "onMouseUp", (event) => click(event, () => {
+            var _el$20 = _$createElement("box"), _el$21 = _$createElement("text");
+            _$insertNode(_el$20, _el$21);
+            _$setProp(_el$20, "width", 2);
+            _$setProp(_el$20, "flexShrink", 0);
+            _$setProp(_el$20, "onMouseOver", () => setCloseHovered(true));
+            _$setProp(_el$20, "onMouseOut", () => setCloseHovered(false));
+            _$setProp(_el$20, "onMouseUp", (event) => click(event, () => {
               if (event.button === 0 && hovered() === id())
                 requestClose(props.tab.sessionID).catch(fail);
             }));
-            _$setProp(_el$18, "selectable", false);
-            _$insert(_el$18, () => hovered() === id() ? "\u2715 " : "  ");
-            _$effect((_$p) => _$setProp(_el$18, "fg", closeHovered() ? theme().text.feedback.error.base : theme().text.muted, _$p));
-            return _el$17;
+            _$setProp(_el$21, "selectable", false);
+            _$insert(_el$21, () => hovered() === id() ? "\u2715 " : "  ");
+            _$effect((_$p) => _$setProp(_el$21, "fg", closeHovered() ? theme().text.feedback.error.base : theme().text.muted, _$p));
+            return _el$20;
           })()];
         }
       }), null);
@@ -2393,10 +2504,10 @@ function BetterTabs() {
             return props.position > 0;
           },
           get children() {
-            var _el$20 = _$createElement("box");
-            _$setProp(_el$20, "height", 1);
-            _$setProp(_el$20, "flexShrink", 0);
-            return _el$20;
+            var _el$23 = _$createElement("box");
+            _$setProp(_el$23, "height", 1);
+            _$setProp(_el$23, "flexShrink", 0);
+            return _el$23;
           }
         }), _$createComponent(GroupRow, {
           get group() {
@@ -2463,55 +2574,55 @@ function BetterTabs() {
       return truncate(`and ${count} more ${count === 1 ? "session" : "sessions"}`, innerWidth());
     };
     return (() => {
-      var _el$21 = _$createElement("box"), _el$22 = _$createElement("text");
-      _$insertNode(_el$21, _el$22);
-      _$setProp(_el$21, "flexDirection", "row");
-      _$setProp(_el$21, "justifyContent", "center");
-      _$setProp(_el$21, "height", 1);
-      _$setProp(_el$21, "flexShrink", 0);
-      _$setProp(_el$21, "onMouseOver", () => setHovered("more"));
-      _$setProp(_el$21, "onMouseOut", () => setHovered(undefined));
-      _$setProp(_el$21, "onMouseUp", (event) => click(event, () => {
+      var _el$24 = _$createElement("box"), _el$25 = _$createElement("text");
+      _$insertNode(_el$24, _el$25);
+      _$setProp(_el$24, "flexDirection", "row");
+      _$setProp(_el$24, "justifyContent", "center");
+      _$setProp(_el$24, "height", 1);
+      _$setProp(_el$24, "flexShrink", 0);
+      _$setProp(_el$24, "onMouseOver", () => setHovered("more"));
+      _$setProp(_el$24, "onMouseOut", () => setHovered(undefined));
+      _$setProp(_el$24, "onMouseUp", (event) => click(event, () => {
         scroller?.scrollBy(1, "viewport");
         scroller?.afterLayout(countHidden);
       }));
-      _$setProp(_el$22, "selectable", false);
-      _$insert(_el$22, label);
+      _$setProp(_el$25, "selectable", false);
+      _$insert(_el$25, label);
       _$effect((_p$) => {
         var _v$4 = rowBackground("more", false), _v$5 = theme().text.muted;
-        _v$4 !== _p$.e && (_p$.e = _$setProp(_el$21, "backgroundColor", _v$4, _p$.e));
-        _v$5 !== _p$.t && (_p$.t = _$setProp(_el$22, "fg", _v$5, _p$.t));
+        _v$4 !== _p$.e && (_p$.e = _$setProp(_el$24, "backgroundColor", _v$4, _p$.e));
+        _v$5 !== _p$.t && (_p$.t = _$setProp(_el$25, "fg", _v$5, _p$.t));
         return _p$;
       }, {
         e: undefined,
         t: undefined
       });
-      return _el$21;
+      return _el$24;
     })();
   }
   function NewSessionRow() {
     return (() => {
-      var _el$23 = _$createElement("box"), _el$24 = _$createElement("text");
-      _$insertNode(_el$23, _el$24);
-      _$setProp(_el$23, "flexDirection", "row");
-      _$setProp(_el$23, "height", rowHeight);
-      _$setProp(_el$23, "flexShrink", 0);
-      _$setProp(_el$23, "paddingTop", padding);
-      _$setProp(_el$23, "onMouseOver", () => setHovered("new"));
-      _$setProp(_el$23, "onMouseOut", () => setHovered(undefined));
-      _$setProp(_el$23, "onMouseUp", (event) => click(event, () => ctx.keymap.dispatch("session.new")));
-      _$setProp(_el$24, "selectable", false);
-      _$insert(_el$24, () => narrow() ? " +" : " + New session");
+      var _el$26 = _$createElement("box"), _el$27 = _$createElement("text");
+      _$insertNode(_el$26, _el$27);
+      _$setProp(_el$26, "flexDirection", "row");
+      _$setProp(_el$26, "height", rowHeight);
+      _$setProp(_el$26, "flexShrink", 0);
+      _$setProp(_el$26, "paddingTop", padding);
+      _$setProp(_el$26, "onMouseOver", () => setHovered("new"));
+      _$setProp(_el$26, "onMouseOut", () => setHovered(undefined));
+      _$setProp(_el$26, "onMouseUp", (event) => click(event, () => ctx.keymap.dispatch("session.new")));
+      _$setProp(_el$27, "selectable", false);
+      _$insert(_el$27, () => narrow() ? " +" : " + New session");
       _$effect((_p$) => {
         var _v$6 = rowBackground("new", false), _v$7 = theme().text.muted;
-        _v$6 !== _p$.e && (_p$.e = _$setProp(_el$23, "backgroundColor", _v$6, _p$.e));
-        _v$7 !== _p$.t && (_p$.t = _$setProp(_el$24, "fg", _v$7, _p$.t));
+        _v$6 !== _p$.e && (_p$.e = _$setProp(_el$26, "backgroundColor", _v$6, _p$.e));
+        _v$7 !== _p$.t && (_p$.t = _$setProp(_el$27, "fg", _v$7, _p$.t));
         return _p$;
       }, {
         e: undefined,
         t: undefined
       });
-      return _el$23;
+      return _el$26;
     })();
   }
   const toggleHidden = () => {
@@ -2643,9 +2754,55 @@ function BetterTabs() {
     return name || undefined;
   };
   const NEW_GROUP = "\x00new";
+  const ATTACH = "\x00attach";
+  const DETACH = "\x00detach";
+  const setParent = (sessionID, parent) => void update((draft) => {
+    draft.parents ??= {};
+    draft.parents[sessionID] = parent;
+  }).then(() => toast(parent ? `Attached to ${titleOf({
+    sessionID: parent
+  })}` : "Detached; it is a normal tab again")).catch(fail);
+  const pickParent = async (tab) => {
+    const family = familyOf(tab.sessionID);
+    const options = groups().flatMap((group) => group.tabs.filter((item) => !family.includes(item.sessionID) && !parents().has(item.sessionID)).map((item) => ({
+      title: titleOf(item),
+      value: item.sessionID,
+      category: group.name
+    })));
+    if (!options.length)
+      return toast("Open another tab first, then attach this one to it", "warning");
+    const selected = await ctx.ui.dialog.select({
+      title: `Attach \u201C${titleOf(tab)}\u201D to`,
+      placeholder: "Search tabs",
+      options
+    });
+    if (selected)
+      setParent(tab.sessionID, selected);
+  };
+  const attachCurrent = async () => {
+    const current = activeTab();
+    if (!current)
+      return toast("Open a tab first", "warning");
+    return pickParent(current);
+  };
+  const detachCurrent = () => {
+    const current = activeTab();
+    if (!current)
+      return toast("Open a tab first", "warning");
+    if (!parents().has(current.sessionID))
+      return toast("This tab is not a sub-session", "warning");
+    setParent(current.sessionID, null);
+  };
   const openTabMenu = async (tab) => {
     const current = customMap()[tab.sessionID];
-    const options = [...customNames().map((name) => ({
+    const parent = parents().get(tab.sessionID);
+    const options = parent ? [{
+      title: `Detach from ${titleOf({
+        sessionID: parent
+      })}`,
+      value: DETACH,
+      category: "Sub-session"
+    }] : [...customNames().map((name) => ({
       title: name,
       value: name,
       category: "Move to group"
@@ -2657,14 +2814,22 @@ function BetterTabs() {
       title: "Remove from group",
       value: UNGROUPED,
       category: "Move to group"
+    }] : [], ...subSessions ? [{
+      title: "Attach to a tab\u2026",
+      value: ATTACH,
+      category: "Sub-session"
     }] : []];
     const selected = await ctx.ui.dialog.select({
       title: titleOf(tab),
       options,
-      current: grouping() === "custom" ? current : undefined
+      current: grouping() === "custom" && !parent ? current : undefined
     });
     if (selected === undefined)
       return;
+    if (selected === DETACH)
+      return setParent(tab.sessionID, null);
+    if (selected === ATTACH)
+      return pickParent(tab);
     const name = selected === NEW_GROUP ? await askName("New group", nextGroupName()) : selected;
     if (name)
       assignGroup([tab.sessionID], name);
@@ -2741,6 +2906,8 @@ function BetterTabs() {
     const current = activeTab();
     if (!current)
       return toast("Open a tab first, then move it to a group", "warning");
+    if (input?.trim() && parents().has(current.sessionID))
+      return toast("A sub-session stays with its parent; use /detach first", "warning");
     if (input?.trim())
       return assignGroup([current.sessionID], input);
     return openTabMenu(current);
@@ -2749,6 +2916,8 @@ function BetterTabs() {
     const current = activeTab();
     if (!current)
       return toast("Open a tab first", "warning");
+    if (parents().has(current.sessionID))
+      return toast("A sub-session stays with its parent; use /detach first", "warning");
     if (!customMap()[current.sessionID])
       return toast("This tab is not in a custom group", "warning");
     assignGroup([current.sessionID], UNGROUPED);
@@ -2761,7 +2930,7 @@ function BetterTabs() {
   }).catch(fail);
   const openPicker = async () => {
     const options = groups().flatMap((group, position) => group.tabs.map((tab, index) => ({
-      title: titleOf(tab),
+      title: (parents().has(tab.sessionID) ? "\u2514 " : "") + titleOf(tab),
       value: tab.sessionID,
       category: group.name,
       footer: position < slotKeys.length && index < slotKeys.length ? `${slotLabel(position)} ${slotLabel(index)}` : undefined
@@ -2775,6 +2944,25 @@ function BetterTabs() {
     if (selected)
       focus(selected);
   };
+  const subSessionCommands = [{
+    id: "better-tabs.attach",
+    title: "Attach current tab to another tab",
+    group: "Better tabs",
+    palette: true,
+    slash: {
+      name: "attach"
+    },
+    run: () => void attachCurrent().catch(fail)
+  }, {
+    id: "better-tabs.detach",
+    title: "Detach current tab from its parent",
+    group: "Better tabs",
+    palette: true,
+    slash: {
+      name: "detach"
+    },
+    run: detachCurrent
+  }];
   ctx.keymap.layer(() => ({
     mode: "global",
     commands: [{
@@ -2855,7 +3043,7 @@ function BetterTabs() {
         name: "ungroup"
       },
       run: ungroupCurrent
-    }, {
+    }, ...subSessions ? subSessionCommands : [], {
       id: "better-tabs.autogroup",
       title: "Toggle automatic tab grouping",
       group: "Better tabs",
@@ -2908,11 +3096,11 @@ function BetterTabs() {
     }))
   }));
   return [(() => {
-    var _el$25 = _$createElement("box");
-    _$use((element) => anchor = element, _el$25);
-    _$setProp(_el$25, "height", 0);
-    _$setProp(_el$25, "flexShrink", 0);
-    return _el$25;
+    var _el$28 = _$createElement("box");
+    _$use((element) => anchor = element, _el$28);
+    _$setProp(_el$28, "height", 0);
+    _$setProp(_el$28, "flexShrink", 0);
+    return _el$28;
   })(), _$createComponent(Show, {
     get when() {
       return _$memo(() => !!visible())() && host();
@@ -2928,25 +3116,25 @@ function BetterTabs() {
         container.zIndex = 20;
       },
       get children() {
-        var _el$26 = _$createElement("box"), _el$27 = _$createElement("scrollbox"), _el$28 = _$createElement("box"), _el$29 = _$createElement("box");
-        _$insertNode(_el$26, _el$27);
-        _$setProp(_el$26, "flexDirection", "column");
-        _$setProp(_el$26, "onMouseDown", () => pressedGroup = undefined);
-        _$setProp(_el$26, "onMouseDrag", dragMove);
-        _$setProp(_el$26, "onMouseDragEnd", () => finishDrag());
-        _$setProp(_el$26, "onMouseUp", () => finishDrag());
-        _$insertNode(_el$27, _el$28);
-        _$use((element) => scroller = element, _el$27);
-        _$setProp(_el$27, "flexGrow", 1);
-        _$setProp(_el$27, "minHeight", 0);
-        _$setProp(_el$27, "scrollbarOptions", {
+        var _el$29 = _$createElement("box"), _el$30 = _$createElement("scrollbox"), _el$31 = _$createElement("box"), _el$32 = _$createElement("box");
+        _$insertNode(_el$29, _el$30);
+        _$setProp(_el$29, "flexDirection", "column");
+        _$setProp(_el$29, "onMouseDown", () => pressedGroup = undefined);
+        _$setProp(_el$29, "onMouseDrag", dragMove);
+        _$setProp(_el$29, "onMouseDragEnd", () => finishDrag());
+        _$setProp(_el$29, "onMouseUp", () => finishDrag());
+        _$insertNode(_el$30, _el$31);
+        _$use((element) => scroller = element, _el$30);
+        _$setProp(_el$30, "flexGrow", 1);
+        _$setProp(_el$30, "minHeight", 0);
+        _$setProp(_el$30, "scrollbarOptions", {
           visible: false
         });
-        _$insertNode(_el$28, _el$29);
-        _$setProp(_el$28, "flexDirection", "column");
-        _$setProp(_el$28, "flexShrink", 0);
-        _$setProp(_el$28, "paddingTop", 1);
-        _$insert(_el$28, _$createComponent(For, {
+        _$insertNode(_el$31, _el$32);
+        _$setProp(_el$31, "flexDirection", "column");
+        _$setProp(_el$31, "flexShrink", 0);
+        _$setProp(_el$31, "paddingTop", 1);
+        _$insert(_el$31, _$createComponent(For, {
           get each() {
             return groupKeys();
           },
@@ -2956,11 +3144,11 @@ function BetterTabs() {
               return position();
             }
           })
-        }), _el$29);
-        _$setProp(_el$29, "height", 1);
-        _$setProp(_el$29, "flexShrink", 0);
-        _$insert(_el$28, _$createComponent(NewSessionRow, {}), null);
-        _$insert(_el$26, _$createComponent(Show, {
+        }), _el$32);
+        _$setProp(_el$32, "height", 1);
+        _$setProp(_el$32, "flexShrink", 0);
+        _$insert(_el$31, _$createComponent(NewSessionRow, {}), null);
+        _$insert(_el$29, _$createComponent(Show, {
           get when() {
             return hiddenBelow() > 0;
           },
@@ -2970,16 +3158,16 @@ function BetterTabs() {
         }), null);
         _$effect((_p$) => {
           var _v$8 = innerWidth(), _v$9 = geometry().height, _v$0 = background();
-          _v$8 !== _p$.e && (_p$.e = _$setProp(_el$26, "width", _v$8, _p$.e));
-          _v$9 !== _p$.t && (_p$.t = _$setProp(_el$26, "height", _v$9, _p$.t));
-          _v$0 !== _p$.a && (_p$.a = _$setProp(_el$26, "backgroundColor", _v$0, _p$.a));
+          _v$8 !== _p$.e && (_p$.e = _$setProp(_el$29, "width", _v$8, _p$.e));
+          _v$9 !== _p$.t && (_p$.t = _$setProp(_el$29, "height", _v$9, _p$.t));
+          _v$0 !== _p$.a && (_p$.a = _$setProp(_el$29, "backgroundColor", _v$0, _p$.a));
           return _p$;
         }, {
           e: undefined,
           t: undefined,
           a: undefined
         });
-        return _el$26;
+        return _el$29;
       }
     })
   })];

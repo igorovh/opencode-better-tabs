@@ -15,6 +15,8 @@ const { values } = parseArgs({
     width: { type: "string", default: "40" },
     height: { type: "string", default: "30" },
     scale: { type: "string", default: "2" },
+    // A compiled tui.js to render instead of this checkout's source, such as the base branch's build.
+    plugin: { type: "string" },
   },
 })
 
@@ -53,6 +55,9 @@ const sessions: Session[] = [
   { id: "web1", projectID: "web", directory: "/web", title: "Dark mode for settings" },
   { id: "web2", projectID: "web", directory: "/web", title: "Flaky checkout test" },
   { id: "docs1", projectID: "docs", directory: "/docs", title: "Write the plugin guide" },
+  // Sub-sessions of "Fix the login redirect", one of them from another repository.
+  { id: "api4", projectID: "api", directory: "/api", title: "Find redirect callers", parentID: "api1" },
+  { id: "web3", projectID: "web", directory: "/web", title: "Check the web redirect", parentID: "api1" },
 ]
 const tabState = {
   api1: { active: true },
@@ -60,6 +65,7 @@ const tabState = {
   web1: { attention: true },
   web2: { unread: "error" },
   docs1: { unread: "activity" },
+  api4: { busy: true },
 }
 
 // One spare column, since the close cross is wider than its cell in most fonts.
@@ -73,6 +79,7 @@ writeFileSync(
 const tui = await startTui({
   stateDir: dir,
   sessions,
+  plugin: values.plugin ? (await import(path.resolve(values.plugin))).default : undefined,
   options: JSON.parse(values.options!),
   theme: themed(palette),
   tabState,
