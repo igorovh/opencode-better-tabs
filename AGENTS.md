@@ -16,9 +16,14 @@
 ## Demo recordings
 
 - `bun run record -- --out demo.gif --step "hover Dark mode" --step "close Flaky checkout"` records the real
-  OpenCode TUI with this checkout's plugin to a GIF. It needs `opencode`, `ttyd` and `ffmpeg` on `PATH` (or
-  `OPENCODE_BIN` and `TTYD_BIN`) and Playwright's Chromium. Run it without steps to see the step list.
-- `--options '{"confirmClose":true}'` passes plugin options and `--sidebar` crops the GIF to the tab bar.
+  OpenCode TUI with this checkout's plugin to a GIF, through
+  [opencode-tui-recorder](https://github.com/igorovh/opencode-tui-recorder) and `recorder.config.ts`. It needs
+  `opencode`, `ttyd` and `ffmpeg` on `PATH` (or `OPENCODE_BIN` and `TTYD_BIN`) and Playwright's Chromium. Run it
+  without steps to see the step list.
+- `bun run tui serve` keeps a recording open, and `bun run tui begin`, `bun run tui <step>`, `bun run tui screen`,
+  `bun run tui rec-start` and `bun run tui rec-stop --out demo.gif` drive it one step at a time; every step
+  prints the screen. tidy's review uses this to try steps before it records.
+- `--options '{"confirmClose":true}'` passes plugin options and `--crop` crops the GIF to the tab bar.
   `--plugin <path>` records another checkout, such as a worktree of the base branch.
 - `--sessions sessions.json` replaces the sample tabs with a JSON array of `{ "project", "title" }`. Add
   `"rewrite": true` to amend the project's first commit before that session, so one folder gets two project IDs.
@@ -27,7 +32,8 @@
 - `expect <text>` and `expect-not <text>` steps fail the recording when the screen does not match, so a GIF
   doubles as a test. Put them after every action, for example `close Two`, `expect Close tab`, `key Enter`,
   `expect-not Two`. `expect-above <a> -> <b>` checks an order, such as `expect-above docs -> api`. A failed
-  step stops the steps but still writes the GIF, then exits with an error.
+  step stops the steps but still writes the GIF, then exits with 1. A broken recording, such as an unknown step
+  or a timeout, exits with 2.
 - A check in a before-and-after recording should pass on the PR branch and fail on the base branch. A check
   that passes on both, such as `expect New session`, proves nothing about the change.
 - Every PR that changes `src/` in a way the user can see or touch must include a GIF of the changed behaviour,

@@ -4,7 +4,7 @@ name: Record demo
 on:
   # Also checks the recorder itself whenever it changes.
   pull_request:
-    paths: [scripts/record.ts, .github/actions/setup-record/**, .github/workflows/record.yml]
+    paths: [recorder.config.ts, package.json, .github/actions/setup-record/**, .github/workflows/record.yml]
   workflow_dispatch:
     inputs:
       steps:

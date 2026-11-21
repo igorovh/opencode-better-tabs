@@ -222,8 +222,9 @@ Pass plugin options with `--options '{"padding":1}'` and hover a row with `--hov
 change affects what the bar shows, render it on the base branch and on your branch and post both images as
 "Before" and "After".
 
-To record the real OpenCode TUI to a GIF, run `bun run record`. It needs `opencode` (V2), `ttyd` and `ffmpeg` on
-`PATH` (or `OPENCODE_BIN` and `TTYD_BIN`) and Playwright's Chromium. The README demos are recorded with:
+To record the real OpenCode TUI to a GIF, run `bun run record` ([opencode-tui-recorder](https://github.com/igorovh/opencode-tui-recorder),
+set up in `recorder.config.ts`). It needs `opencode` (V2), `ttyd` and `ffmpeg` on `PATH` (or `OPENCODE_BIN` and
+`TTYD_BIN`) and Playwright's Chromium. The README demos are recorded with:
 
 ```sh
 bun run record -- --out docs/demo.gif --sessions docs/demo.json --steps docs/demo.steps
