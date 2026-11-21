@@ -70,7 +70,7 @@
     "@types/node": "^26.0.0",
     "jsonc-parser": "^3.3.1",
     "opencode-tui-recorder": "github:igorovh/opencode-tui-recorder#v0.1.0",
-    "solid-js": "1.9.20",
+    "solid-js": "2.0.3",
     "typescript": "^7.0.0"
   }
 }
