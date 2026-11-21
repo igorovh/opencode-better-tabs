@@ -25,7 +25,7 @@ jobs:
       tag: ${{ steps.tagpr.outputs.tag }}
       pull_request: ${{ steps.tagpr.outputs.pull_request }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: main
           fetch-depth: 0
@@ -64,7 +64,7 @@ jobs:
       contents: write
     steps:
       # changelogithub finds the tag with `git tag --points-at HEAD`.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ needs.tagpr.outputs.tag }}
           fetch-depth: 0
