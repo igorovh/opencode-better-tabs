@@ -954,7 +954,7 @@ function BetterTabs() {
         onMouseOut={() => setHovered(undefined)}
         onMouseUp={(event: MouseEvent) => click(event, () => ctx.keymap.dispatch("session.new"))}
       >
-        <text selectable={false} fg={theme().text.muted}>{narrow() ? " +" : " + New session"}</text>
+        <text selectable={false} fg={theme().text.muted}>{narrow() ? " +" : " + Start a new session"}</text>
       </box>
     )
   }

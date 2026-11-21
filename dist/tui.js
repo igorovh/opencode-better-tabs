@@ -2612,7 +2612,7 @@ function BetterTabs() {
       _$setProp(_el$26, "onMouseOut", () => setHovered(undefined));
       _$setProp(_el$26, "onMouseUp", (event) => click(event, () => ctx.keymap.dispatch("session.new")));
       _$setProp(_el$27, "selectable", false);
-      _$insert(_el$27, () => narrow() ? " +" : " + New session");
+      _$insert(_el$27, () => narrow() ? " +" : " + Start a new session");
       _$effect((_p$) => {
         var _v$6 = rowBackground("new", false), _v$7 = theme().text.muted;
         _v$6 !== _p$.e && (_p$.e = _$setProp(_el$26, "backgroundColor", _v$6, _p$.e));

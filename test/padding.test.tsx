@@ -67,7 +67,7 @@ for (const [name, plugin] of [
     test("pads the new-session row too", async () => {
       const tui = await start(plugin, 1, sessions.slice(0, 2))
       const frame = await tui.frame()
-      const newSession = rowOf(frame, "+ New session")
+      const newSession = rowOf(frame, "+ Start a new session")
 
       // Bottom padding of "alpha 2", the spacer, then the top padding of the new-session row.
       expect(newSession - rowOf(frame, "alpha 2")).toBe(4)
