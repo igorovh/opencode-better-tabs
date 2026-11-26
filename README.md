@@ -89,7 +89,7 @@ Install a release from GitHub with the OpenCode CLI. Pin the tag: a pinned insta
 when a newer release exists.
 
 ```sh
-opencode plugin add github:igorovh/opencode-better-tabs#v0.7.0
+opencode plugin add github:igorovh/opencode-better-tabs#v0.7.1
 ```
 
 This adds the plugin to the global `plugins` array in `~/.config/opencode/opencode.jsonc`. Restart the TUI and the
@@ -100,14 +100,14 @@ You can also add the entry to the config yourself:
 ```jsonc
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugins": ["github:igorovh/opencode-better-tabs#v0.7.0"]
+  "plugins": ["github:igorovh/opencode-better-tabs#v0.7.1"]
 }
 ```
 
 To move to a newer release, change the tag. To remove the plugin:
 
 ```sh
-opencode plugin remove github:igorovh/opencode-better-tabs#v0.7.0
+opencode plugin remove github:igorovh/opencode-better-tabs#v0.7.1
 ```
 
 ## Keys and commands
@@ -143,7 +143,7 @@ Add an entry to `cli.json` whose `package` is exactly the same string as in `ope
 {
   "plugins": [
     {
-      "package": "github:igorovh/opencode-better-tabs#v0.7.0",
+      "package": "github:igorovh/opencode-better-tabs#v0.7.1",
       "options": { "modifier": "alt", "keys": "123456789cghijklmnopqrstuvwxyz" }
     }
   ]
